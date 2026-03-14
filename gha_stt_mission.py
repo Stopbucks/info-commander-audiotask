@@ -9,8 +9,9 @@ import os, time, random, gc
 from datetime import datetime, timezone
 from supabase import create_client
 
-# 引入全軍統一的軍火庫
-from src.pod_scra_intel_r2 import compress_task_to_opus
+
+# 引入全軍統一的軍火庫 (修正導入檔名：移除 _intel 以對齊實體檔案)
+from src.pod_scra_r2 import compress_task_to_opus 
 from src.pod_scra_intel_techcore import (
     upsert_intel_status, delete_intel_task, call_groq_stt
 )
@@ -18,8 +19,8 @@ from src.pod_scra_intel_techcore import (
 # =========================================================
 # ⚙️ 戰術參數設定區 (指揮官請在此調整數量)
 # =========================================================
-COMPRESS_LIMIT = 2   # 🚀 每次排程壓縮數量
-STT_LIMIT = 2        # 🚀 每次排程 AI 轉譯數量
+COMPRESS_LIMIT = 1   # 🚀 每次排程壓縮數量
+STT_LIMIT = 1        # 🚀 每次排程 AI 轉譯數量
 SAFE_DURATION_SECONDS = 1800  # 🛡️ 撤離防線：30 分鐘 (1800秒)
 # =========================================================
 
