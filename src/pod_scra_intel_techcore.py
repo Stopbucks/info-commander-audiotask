@@ -26,12 +26,14 @@ def fetch_summary_tasks(sb):
     return sb.table("mission_intel").select("*, mission_queue(episode_title, source_name, r2_url)").eq("intel_status", "Sum.-pre").order("created_at").limit(15).execute().data or []
 
 def upsert_intel_status(sb, task_id, status, provider=None, stt_text=None):
-    """【幽靈輾壓】強制寫入/覆蓋狀態，避免 Duplicate Key 卡死"""
+    """【幽靈輾壓 V5.3】原生防撞版！利用 on_conflict 讓資料庫自己解決重複問題"""
     payload = {"task_id": task_id, "intel_status": status}
     if provider: payload["ai_provider"] = provider
     if stt_text: payload["stt_text"] = stt_text
-    sb.table("mission_intel").upsert(payload).execute()
-
+    
+    # 🚀 加上 on_conflict="task_id"，Supabase 就會聰明地自動切換 Insert 或 Update！
+    sb.table("mission_intel").upsert(payload, on_conflict="task_id").execute()
+    
 def update_intel_success(sb, task_id, summary, score):
     """【安全結案】將摘要存入資料庫"""
     sb.table("mission_intel").update({
@@ -104,32 +106,42 @@ def parse_intel_metrics(text):
     return metrics
 
 def send_tg_report(secrets, source, title, summary):
-    """【防爆通訊】確保戰報不因 Markdown 語法崩潰，並提供錯誤追蹤"""
-    # 🚀 強化標題防護
-    report_msg = f"🎙️ *{source}*\n📌 *{title}*\n\n{summary}"
+    """【防爆通訊】長度截斷、特殊符號清洗、失敗強制拋錯"""
+    # 1. 安全截斷：確保總字數不超過 TG 極限 (4096)，這裡抓 4000 留安全邊際
+    safe_summary = summary[:3800] + ("...\n(截斷)" if len(summary) > 3800 else "")
+    
+    # 2. Markdown 符號清洗：將容易導致 TG 報錯的符號轉義或替換
+    # (此處將部分容易出錯的 markdown 符號簡單替換為全形，增加容錯)
+    safe_source = source.replace("_", "＿").replace("*", "＊").replace("[", "〔").replace("]", "〕").replace("`", "‵")
+    safe_title = title.replace("_", "＿").replace("*", "＊").replace("[", "〔").replace("]", "〕").replace("`", "‵")
+    
+    report_msg = f"🎙️ *{safe_source}*\n📌 *{safe_title}*\n\n{safe_summary}"
     
     url = f"https://api.telegram.org/bot{secrets['TG_TOKEN']}/sendMessage"
     payload = {
         "chat_id": secrets["TG_CHAT"],
-        "text": report_msg[:4000],
+        "text": report_msg,
         "parse_mode": "Markdown" 
     }
     
     try:
         resp = requests.post(url, json=payload, timeout=15)
-        # 🚀 如果 Markdown 解析失敗，自動退回純文字模式發送，確保情報必達
+        
+        # 如果 Markdown 解析失敗 (400 Bad Request)，啟動純文字迫降模式
         if resp.status_code != 200:
-            print(f"⚠️ [TG 通訊報警] Markdown 解析失敗，嘗試純文字模式重新發送...")
-            payload["parse_mode"] = None
+            print(f"⚠️ [TG 通訊報警] Markdown 解析失敗 ({resp.text})。啟動純文字迫降模式...")
+            payload["parse_mode"] = None # 移除格式，強迫發送
             resp = requests.post(url, json=payload, timeout=15)
         
+        # 🚨 終極檢查：如果連純文字都發不出去，必須將錯誤拋出，阻止資料庫結案！
         if resp.status_code == 200:
-            print(f"📡 [TG 通訊] 戰報已送達。")
+            print(f"📡 [TG 通訊] 戰報已安全送達。")
             return True
         else:
-            print(f"❌ [TG 通訊] 最終發送失敗: {resp.text}")
-            return False
-    except Exception as e:
-        print(f"💥 [TG 通訊] 硬體故障: {str(e)}")
-        return False
+            error_msg = f"Telegram 終極發送失敗: {resp.text}"
+            print(f"❌ {error_msg}")
+            raise Exception(error_msg) # 👈 關鍵：發不出去就必須死給外層看！
 
+    except Exception as e:
+        print(f"💥 [TG 通訊] 致命故障: {str(e)}")
+        raise e # 👈 關鍵：必須將錯誤往上拋
