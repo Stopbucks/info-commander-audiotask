@@ -1,0 +1,29 @@
+# --- S-Plan Fortress .gitignore ---
+
+# 🚀 執行環境 (不要上傳，每台電腦獨立建立)
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 🛡️ 關鍵暗鎖 (絕對禁止上傳 GitHub)
+.env
+credentials.json
+*.key
+
+# 🎨 視覺防禦設定 (Peacock 工作區設定可選擇不上傳)
+.vscode/
+
+
+# 📦 暫存檔案
+*.log
+*.tmp
+temp_audio/
+*.mp3
+*.m4a
+*.opus
+*.txt
+!requirements.txt

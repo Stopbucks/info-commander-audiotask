@@ -3,12 +3,13 @@ name: GHA STT Assault (第一棒重裝消化特遣隊)
 
 on:
   schedule:
-    - cron: '0 * * * *' # 每 60 分鐘啟動一次 (整點執行)
+    - cron: '23 * * * *' # 戰術偏移：避開整點塞車，每小時第 23 分鐘啟動
   workflow_dispatch: # 允許在 GitHub 網頁上手動點擊啟動
 
 jobs:
   stt_assault_mission:
     runs-on: ubuntu-latest
+    timeout-minutes: 40 # 強制撤離防線：若執行超過 40 分鐘，GitHub 將自動終止任務
 
     steps:
     - name: Checkout repository

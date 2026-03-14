@@ -1,0 +1,21 @@
+# --- S-Plan Fortress v3.1 全軍統一版清單 ---
+# --- S-Plan Fortress v3.2 強化版清單 ---
+# 針對 GitHub Actions 與多裝置同步優化
+
+flask
+gunicorn
+requests
+supabase==2.12.0
+httpx==0.27.2
+python-dotenv
+boto3
+feedparser
+apscheduler==3.10.4
+pytz
+imageio-ffmpeg
+groq
+
+# 🚀 補強裝備區
+google-generativeai  # 對接 Gemini 核心
+tenacity             # 針對網路不穩的自動重試機制
+psutil               # 戰地監控：防止記憶體溢位
