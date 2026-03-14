@@ -1,6 +1,6 @@
 # 
 # ---------------------------------------------------------
-# 此程式碼： gha_stt_mission.py 
+# 此程式碼： gha_stt_mission.py V1.4
 # 任務： (GitHub Actions 專用 - 專職消化第一棒)
 # 代號：AUDIO_EAT
 # ---------------------------------------------------------
@@ -41,18 +41,26 @@ def run_gha_assault():
     print(f"🚀 [{worker_id}] 吞噬特遣隊上線！(防線設定: {SAFE_DURATION_SECONDS/60} 分鐘)")
 
     try:
-        # --- 步驟 0: 戰情室報到 (略) ---
+        # --- 步驟 0: 戰情室報到 ---
         t_res = sb.table("pod_scra_tactics").select("*").eq("id", 1).single().execute()
         if t_res.data:
             tactic = t_res.data
-            w_status = tactic.get("worker_status", {})
-            w_health = tactic.get("workers_health", {})
+            # 🚀 強化防護：避免資料庫欄位為 NULL 時導致程式崩潰
+            w_status = tactic.get("worker_status") or {}
+            w_health = tactic.get("workers_health") or {}
+            
             tick_key = f"{worker_id}_tick"
+            # 🚀 確保 w_status 一定是字典，現在 .get() 可以安全執行了
             w_status[tick_key] = w_status.get(tick_key, 0) + 1  
             w_health[worker_id] = now_iso
+            
             sb.table("pod_scra_tactics").update({
-                "worker_status": w_status, "workers_health": w_health, "last_heartbeat_at": now_iso
+                "worker_status": w_status, 
+                "workers_health": w_health, 
+                "last_heartbeat_at": now_iso
             }).eq("id", 1).execute()
+            print(f"📡 [{worker_id}] 戰情室簽到成功！目前累積出勤次數 (Tick): {w_status[tick_key]}")
+
 
         # ---------------------------------------------------------
         # 📦 階段 A：壓縮任務 (加上時間防線)
