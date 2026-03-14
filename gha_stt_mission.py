@@ -1,5 +1,5 @@
 # ---------------------------------------------------------
-# 此程式碼： gha_stt_mission.py V4.0 (雙模式探測版)
+# 此程式碼： gha_stt_mission.py V4.1 (絕對綁定與避災升級版)
 # 任務： (GitHub Actions 專用 - 支援音檔救援與摘要發報)
 # 代號：AUDIO_EAT
 # ---------------------------------------------------------
@@ -88,8 +88,10 @@ def run_gha_assault():
 
                 print(f"🎯 [STT 鎖定] {t.get('source_name')}")
                 try:
-                    chosen_provider = random.choice(["GROQ", "GEMINI"])
+                    # 🚨 戰場防禦：Groq 503 當機中，強制拔除擲骰子，全軍切換 GEMINI！
+                    chosen_provider = "GEMINI"
                     upsert_intel_status(sb, t_id, "Sum.-proc", chosen_provider)
+                    
                     if chosen_provider == "GROQ":
                         stt_text = call_groq_stt(secrets, r2_url)
                         upsert_intel_status(sb, t_id, "Sum.-pre", stt_text=stt_text)
@@ -138,17 +140,21 @@ def run_gha_assault():
 
                         if summary:
                             metrics = parse_intel_metrics(summary)
-                            update_intel_success(sb, t_id, summary, metrics["score"])
-                            print(f"💾 摘要已安全結案。準備發送 TG...")
+                            
+                            # 🚀 絕對綁定：先發送 Telegram！如果失敗會直接跳到 except，阻斷結案！
+                            print(f"📡 準備發送 TG 戰報...")
                             send_tg_report(secrets, q_data.get('source_name', '未知'), q_data.get('episode_title', '未知'), summary)
-                            print(f"🚀 TG 發報成功！")
+                            
+                            # 🚀 發送成功後，才允許更改資料庫狀態為「已結案」
+                            update_intel_success(sb, t_id, summary, metrics["score"])
+                            print(f"💾 戰報送達，摘要已安全結案！")
                         else:
                             print(f"⚠️ 摘要生成結果為空。")
 
                     except Exception as e:
                         err_str = str(e)
                         print(f"❌ 摘要/發報崩潰: {err_str}")
-                        print(traceback.format_exc()) # 🚨 捕捉摘要失敗的真兇
+                        print(traceback.format_exc()) # 🚨 捕捉摘要或 TG 發送失敗的真兇
                         if '404' in err_str and 'Not Found' in err_str:
                             delete_intel_task(sb, t_id)
                             sb.table("mission_queue").update({"r2_url": None, "scrape_status": "pending"}).eq("id", t_id).execute()
