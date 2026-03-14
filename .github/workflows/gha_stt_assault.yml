@@ -1,0 +1,42 @@
+# .github/workflows/gha_stt_assault.yml
+name: GHA STT Assault (第一棒重裝消化特遣隊)
+
+on:
+  schedule:
+    - cron: '0 * * * *' # 每 60 分鐘啟動一次 (整點執行)
+  workflow_dispatch: # 允許在 GitHub 網頁上手動點擊啟動
+
+jobs:
+  stt_assault_mission:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip' # 加速後續的套件安裝
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Execute GHA STT Mission
+      env:
+        WORKER_ID: "GITHUB"
+        MEMORY_TIER: "512"
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+        R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      run: |
+        python gha_stt_mission.py
