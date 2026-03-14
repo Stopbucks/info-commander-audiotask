@@ -18,7 +18,7 @@ from src.pod_scra_intel_techcore import (
 # ⚙️ 戰術參數設定區
 # =========================================================
 COMPRESS_LIMIT = 3   # 📦 每次排程壓縮數量
-STT_LIMIT = 1        # 🎤 每次排程 AI 轉譯數量
+STT_LIMIT = 2        # 🎤 每次排程 AI 轉譯數量
 SUMMARY_LIMIT = 1    # 📝 每次排程摘要與 TG 發報數量
 SAFE_DURATION_SECONDS = 1800  # 🛡️ 撤離防線：30 分鐘 (1800秒)
 
