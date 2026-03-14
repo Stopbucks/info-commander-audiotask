@@ -104,7 +104,32 @@ def parse_intel_metrics(text):
     return metrics
 
 def send_tg_report(secrets, source, title, summary):
-    report_msg = f"🎙️ {source}\n📌 {title}\n\n{summary}"
-    resp = requests.post(f"https://api.telegram.org/bot{secrets['TG_TOKEN']}/sendMessage", 
-                         json={"chat_id": secrets["TG_CHAT"], "text": report_msg[:4000], "parse_mode": "Markdown"}, timeout=15)
-    return resp.status_code == 200
+    """【防爆通訊】確保戰報不因 Markdown 語法崩潰，並提供錯誤追蹤"""
+    # 🚀 強化標題防護
+    report_msg = f"🎙️ *{source}*\n📌 *{title}*\n\n{summary}"
+    
+    url = f"https://api.telegram.org/bot{secrets['TG_TOKEN']}/sendMessage"
+    payload = {
+        "chat_id": secrets["TG_CHAT"],
+        "text": report_msg[:4000],
+        "parse_mode": "Markdown" 
+    }
+    
+    try:
+        resp = requests.post(url, json=payload, timeout=15)
+        # 🚀 如果 Markdown 解析失敗，自動退回純文字模式發送，確保情報必達
+        if resp.status_code != 200:
+            print(f"⚠️ [TG 通訊報警] Markdown 解析失敗，嘗試純文字模式重新發送...")
+            payload["parse_mode"] = None
+            resp = requests.post(url, json=payload, timeout=15)
+        
+        if resp.status_code == 200:
+            print(f"📡 [TG 通訊] 戰報已送達。")
+            return True
+        else:
+            print(f"❌ [TG 通訊] 最終發送失敗: {resp.text}")
+            return False
+    except Exception as e:
+        print(f"💥 [TG 通訊] 硬體故障: {str(e)}")
+        return False
+
