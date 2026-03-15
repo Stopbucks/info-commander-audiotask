@@ -3,7 +3,7 @@ name: GHA STT Assault (第一棒重裝消化特遣隊)
 
 on:
   schedule:
-    - cron: '23 * * * *' # 戰術偏移：避開整點塞車，每小時第 23 分鐘啟動
+    - cron: '23 */12 * * *' # 🚀 修正：每 12 小時的第 23 分鐘啟動 (如 00:23, 12:23)
   workflow_dispatch: # 允許在 GitHub 網頁上手動點擊啟動
 
 jobs:
@@ -35,8 +35,8 @@ jobs:
         SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}  # 🚨 新增這行
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}      # 🚨 新增這行
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }} 
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }} 
         R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
         R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
         R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
