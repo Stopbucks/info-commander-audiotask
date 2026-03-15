@@ -1,102 +1,75 @@
 # ---------------------------------------------------------
-# 程式碼：src/pod_scra_intel_techcore.py (V5.0 RENDER/KOYEB 軍械與通訊模組)
+# 程式碼：src/pod_scra_intel_techcore.py (V5.3 絕對防禦與雷達升級版)
 # 職責：1. 封裝所有 Supabase 複雜查詢 2. 處理二進制檔案下載與編碼
 # 3. 呼叫外部 AI API 4. 發送 Telegram 戰報
-# 特色：用完即丟！將記憶體消耗限制在函式內部，保護 256接近512MB 戰機
-# 不同於FLY，RENDER稍微加重任務量(FLY確定是256MB，KOYEB/Render稍多)
+# 特色：用完即丟！將記憶體消耗限制在函式內部，保護 256~512MB 戰機
 # ---------------------------------------------------------
 import requests, base64, re, gc
 from datetime import datetime
 
-# --- 📊 資料庫閘道 (Database Gateway) ---
-def fetch_stt_tasks(sb, mem_tier):
-    """【智慧閘道】根據體量精準配發 STT 任務，拒絕胖檔案"""
+def fetch_stt_tasks(sb, mem_tier, fetch_limit=50):
     query = sb.table("view_worker_task_inbox").select("*")
     if mem_tier < 512:
-        # 輕裝部隊 (FLY): 僅允許 <15MB 且為 .opus/.ogg
         query = query.or_("r2_url.ilike.%.opus,r2_url.ilike.%.ogg").lt("audio_size_mb", 15).order("audio_size_mb", desc=False)
     else:
-        # 重裝部隊 (DBOS/HF): 優先處理大檔案
         query = query.order("audio_size_mb", desc=True)
-    # 🚀 關鍵修復：limit 10，避免被已完成的任務卡死頂端
-    return query.limit(10).execute().data or []
+    return query.limit(fetch_limit).execute().data or []
 
-def fetch_summary_tasks(sb):
-    """【視線穿透】一次抓 15 筆，避免被頂端損壞任務卡死"""
-    return sb.table("mission_intel").select("*, mission_queue(episode_title, source_name, r2_url)").eq("intel_status", "Sum.-pre").order("created_at").limit(15).execute().data or []
+def fetch_summary_tasks(sb, fetch_limit=50):
+    return sb.table("mission_intel").select("*, mission_queue(episode_title, source_name, r2_url)").eq("intel_status", "Sum.-pre").order("created_at").limit(fetch_limit).execute().data or []
 
 def upsert_intel_status(sb, task_id, status, provider=None, stt_text=None):
-    """【幽靈輾壓 V5.3】原生防撞版！利用 on_conflict 讓資料庫自己解決重複問題"""
     payload = {"task_id": task_id, "intel_status": status}
     if provider: payload["ai_provider"] = provider
     if stt_text: payload["stt_text"] = stt_text
-    
-    # 🚀 加上 on_conflict="task_id"，Supabase 就會聰明地自動切換 Insert 或 Update！
     sb.table("mission_intel").upsert(payload, on_conflict="task_id").execute()
-    
+
 def update_intel_success(sb, task_id, summary, score):
-    """【安全結案】將摘要存入資料庫"""
     sb.table("mission_intel").update({
         "summary_text": summary, 
         "intel_status": "Sum.-sent",
         "report_date": datetime.now().strftime("%Y-%m-%d"), 
         "total_score": score
     }).eq("task_id", task_id).execute()
+    try:
+        sb.table("mission_queue").update({"scrape_status": "completed"}).eq("id", task_id).execute()
+    except: pass
 
 def delete_intel_task(sb, task_id):
-    """【戰損清理】清除失敗的任務，讓它回歸佇列"""
     try: sb.table("mission_intel").delete().eq("task_id", task_id).execute()
     except: pass
 
-# --- 🧠 AI 火控系統 (API Weapons) ---
 def call_groq_stt(secrets, r2_url_path):
-    """【記憶體隔離】在函式內下載、發送、銷毀音檔"""
     url = f"{secrets['R2_URL']}/{r2_url_path}"
     m_type = "audio/ogg" if ".opus" in url else "audio/mpeg"
-    
     resp = requests.get(url, timeout=60)
     resp.raise_for_status()
     audio_data = resp.content
-    
     headers = {"Authorization": f"Bearer {secrets['GROQ_KEY']}"}
     files = {'file': (r2_url_path, audio_data, m_type)}
     data = {'model': 'whisper-large-v3', 'response_format': 'text', 'language': 'en'}
-    
     stt_resp = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", headers=headers, files=files, data=data, timeout=120)
-    
-    # 💥 強制銷毀二進制記憶體
     del audio_data, files, resp; gc.collect()
-    
-    if stt_resp.status_code == 200:
-        return stt_resp.text
-    else:
-        raise Exception(f"Groq API Error: HTTP {stt_resp.status_code} - {stt_resp.text}")
+    if stt_resp.status_code == 200: return stt_resp.text
+    else: raise Exception(f"Groq API Error: HTTP {stt_resp.status_code} - {stt_resp.text}")
 
 def call_gemini_summary(secrets, r2_url_path, sys_prompt):
-    """【記憶體隔離】處理 Gemini 摘要的音檔下載與 Base64 編碼"""
     url = f"{secrets['R2_URL']}/{r2_url_path}"
     m_type = "audio/ogg" if ".opus" in url.lower() or ".ogg" in url.lower() else "audio/mpeg"
-    
     raw_bytes = requests.get(url, timeout=120).content
     b64_audio = base64.b64encode(raw_bytes).decode('utf-8')
-    del raw_bytes; gc.collect() # 💥 立刻釋放原始位元組
-    
+    del raw_bytes; gc.collect() 
     gemini_model = "gemini-2.5-flash"
     g_url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={secrets['GEMINI_KEY']}"
     payload = {"contents": [{"parts": [{"text": sys_prompt}, {"inline_data": {"mime_type": m_type, "data": b64_audio}}]}]}
-    
     ai_resp = requests.post(g_url, json=payload, timeout=180)
-    del b64_audio, payload; gc.collect() # 💥 立刻釋放 Base64 巨獸
-    
+    del b64_audio, payload; gc.collect() 
     if ai_resp.status_code == 200:
         cands = ai_resp.json().get('candidates', [])
-        if cands and cands[0].get('content'): 
-            return cands[0]['content']['parts'][0].get('text', "")
+        if cands and cands[0].get('content'): return cands[0]['content']['parts'][0].get('text', "")
         return ""
-    else:
-        raise Exception(f"Gemini API Error: HTTP {ai_resp.status_code}")
+    else: raise Exception(f"Gemini API Error: HTTP {ai_resp.status_code}")
 
-# --- 📡 通訊與輔助 (Comms & Utils) ---
 def parse_intel_metrics(text):
     metrics = {"score": 0, "evidence": 0}
     try:
@@ -106,42 +79,17 @@ def parse_intel_metrics(text):
     return metrics
 
 def send_tg_report(secrets, source, title, summary):
-    """【防爆通訊】長度截斷、特殊符號清洗、失敗強制拋錯"""
-    # 1. 安全截斷：確保總字數不超過 TG 極限 (4096)，這裡抓 4000 留安全邊際
-    safe_summary = summary[:3800] + ("...\n(截斷)" if len(summary) > 3800 else "")
-    
-    # 2. Markdown 符號清洗：將容易導致 TG 報錯的符號轉義或替換
-    # (此處將部分容易出錯的 markdown 符號簡單替換為全形，增加容錯)
-    safe_source = source.replace("_", "＿").replace("*", "＊").replace("[", "〔").replace("]", "〕").replace("`", "‵")
-    safe_title = title.replace("_", "＿").replace("*", "＊").replace("[", "〔").replace("]", "〕").replace("`", "‵")
-    
+    safe_summary = summary[:3800] + ("...\n(因字數限制截斷)" if len(summary) > 3800 else "")
+    safe_source = str(source).replace("_", "＿").replace("*", "＊").replace("[", "〔").replace("]", "〕").replace("`", "‵")
+    safe_title = str(title).replace("_", "＿").replace("*", "＊").replace("[", "〔").replace("]", "〕").replace("`", "‵")
     report_msg = f"🎙️ *{safe_source}*\n📌 *{safe_title}*\n\n{safe_summary}"
-    
     url = f"https://api.telegram.org/bot{secrets['TG_TOKEN']}/sendMessage"
-    payload = {
-        "chat_id": secrets["TG_CHAT"],
-        "text": report_msg,
-        "parse_mode": "Markdown" 
-    }
-    
+    payload = {"chat_id": secrets["TG_CHAT"], "text": report_msg, "parse_mode": "Markdown"}
     try:
         resp = requests.post(url, json=payload, timeout=15)
-        
-        # 如果 Markdown 解析失敗 (400 Bad Request)，啟動純文字迫降模式
         if resp.status_code != 200:
-            print(f"⚠️ [TG 通訊報警] Markdown 解析失敗 ({resp.text})。啟動純文字迫降模式...")
-            payload["parse_mode"] = None # 移除格式，強迫發送
+            payload["parse_mode"] = None
             resp = requests.post(url, json=payload, timeout=15)
-        
-        # 🚨 終極檢查：如果連純文字都發不出去，必須將錯誤拋出，阻止資料庫結案！
-        if resp.status_code == 200:
-            print(f"📡 [TG 通訊] 戰報已安全送達。")
-            return True
-        else:
-            error_msg = f"Telegram 終極發送失敗: {resp.text}"
-            print(f"❌ {error_msg}")
-            raise Exception(error_msg) # 👈 關鍵：發不出去就必須死給外層看！
-
-    except Exception as e:
-        print(f"💥 [TG 通訊] 致命故障: {str(e)}")
-        raise e # 👈 關鍵：必須將錯誤往上拋
+        if resp.status_code == 200: return True
+        else: raise Exception(f"Telegram 終極發送失敗: {resp.text}")
+    except Exception as e: raise e

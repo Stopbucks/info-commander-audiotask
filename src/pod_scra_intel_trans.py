@@ -1,6 +1,7 @@
 # ---------------------------------------------------------
-# 程式碼：src/pod_scra_intel_trans.py  (V5.1 全軍統一狀態機版)
+# 程式碼：src/pod_scra_intel_trans.py  (V5.3 全軍統一狀態機版)
 # 任務：全軍統一 Tick 狀態機、外部物流下載、拋接異常
+# 修正：拔除寫死的 PROCESS_LIMIT 迴圈，將數量控制權完全交還給 core.py 的控制面板
 # ---------------------------------------------------------
 import os, requests, time, random, gc, json
 from urllib.parse import urlparse
@@ -11,6 +12,7 @@ def execute_fortress_stages(sb, config, s_log_func, trigger_intel_func, audio_of
     now_iso = datetime.now(timezone.utc).isoformat()
     worker_id = config.get("WORKER_ID", "UNKNOWN_NODE")
     
+    time.sleep(random.uniform(3.0, 8.0))
     t_res = sb.table("pod_scra_tactics").select("*").eq("id", 1).single().execute()
     if not t_res.data: return
     tactic = t_res.data
@@ -27,9 +29,9 @@ def execute_fortress_stages(sb, config, s_log_func, trigger_intel_func, audio_of
     s_log_func(sb, "STATE_M", "INFO", f"⚙️ [戰略狀態機] 身分: {role_name} | 階段節拍: {current_tick} / {max_ticks}")
 
     from src.pod_scra_intel_core import run_audio_to_stt_mission, run_stt_to_summary_mission
-    PROCESS_LIMIT = 1 # 輕裝部隊保守設定為 1
 
     # 🚀 注意：這裡不寫 try...except，讓崩潰直接穿透到 app.py 去通報軟失敗！
+    # 🚀 注意 2：拔除 PROCESS_LIMIT 迴圈，任務數量與撤退時間完全交由 core.py 面板控制
     if is_duty_officer and current_tick == 1:
         s_log_func(sb, "STATE_M", "INFO", f"{role_name} 執行階段 1/3: 外部走私下載")
         rule_res = sb.table("pod_scra_rules").select("domain").in_("worker_id", [worker_id, "ALL"]).gte("expired_at", now_iso).execute()
@@ -37,18 +39,12 @@ def execute_fortress_stages(sb, config, s_log_func, trigger_intel_func, audio_of
         run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist)
     
     elif current_tick % 2 != 0 or (not is_duty_officer and current_tick == 1):
-        s_log_func(sb, "STATE_M", "INFO", f"{role_name} 啟動轉譯產線 (上限 {PROCESS_LIMIT} 件)")
+        s_log_func(sb, "STATE_M", "INFO", f"{role_name} 啟動轉譯產線 (數量由控制面板接管)")
         if worker_id in audio_officers:
-            for i in range(PROCESS_LIMIT):
-                print(f"🔄 執行第 {i+1}/{PROCESS_LIMIT} 筆轉譯任務...", flush=True)
-                run_audio_to_stt_mission() 
-                time.sleep(3)
+            run_audio_to_stt_mission() 
     else:
-        s_log_func(sb, "STATE_M", "INFO", f"{role_name} 啟動摘要發報 (上限 {PROCESS_LIMIT} 件)")
-        for i in range(PROCESS_LIMIT):
-            print(f"🔄 執行第 {i+1}/{PROCESS_LIMIT} 筆摘要任務...", flush=True)
-            run_stt_to_summary_mission() 
-            time.sleep(3)
+        s_log_func(sb, "STATE_M", "INFO", f"{role_name} 啟動摘要發報 (數量由控制面板接管)")
+        run_stt_to_summary_mission() 
 
     w_status[tick_key] = current_tick
     health = tactic.get('workers_health', {})
@@ -57,7 +53,7 @@ def execute_fortress_stages(sb, config, s_log_func, trigger_intel_func, audio_of
 
 
 def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist):
-    """【核心物流引擎】保留您原本的 403 冰封與建檔邏輯"""
+    """【核心物流引擎】保留 403 冰封與建檔邏輯"""
     query = sb.table("mission_queue").select("*, mission_program_master(*)").eq("scrape_status", "success").is_("r2_url", "null").lte("troop2_start_at", now_iso).order("created_at", desc=True).limit(1)
     tasks = query.execute().data or []
     if not tasks: return
