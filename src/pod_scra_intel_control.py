@@ -17,12 +17,12 @@ def get_tactical_panel(worker_id):
     audio_eat_panel = {
         "MEM_TIER": 512,
         "RADAR_FETCH_LIMIT": 100,
-        "STT_LIMIT": 5,               # 🎤 一次狂吞 5 個音檔轉譯
-        "SUMMARY_LIMIT": 3,           # 📝 一次高量產出 3 篇摘要
+        "STT_LIMIT": 2,               # 🎤 一次狂吞 2  個音檔轉譯
+        "SUMMARY_LIMIT": 2,           # 📝 一次高量產出 2 篇摘要
         "SAFE_DURATION_SECONDS": 1500,# 🛡️ 25 分鐘安全撤退線
         "CAN_COMPRESS": True,         # ⚙️ 允許 FFmpeg 降噪壓縮
         "SCOUT_MODE": False,
-        "MAX_TICKS": 2                # ⏱️ 極限 2 拍：轉譯與摘要快速切換
+        "MAX_TICKS": 2                # ⏱️ 極限 2 拍：轉譯與摘要快速切換 (每 12 小時 1 拍)
     }
 
     panels = {
