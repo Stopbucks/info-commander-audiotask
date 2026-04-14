@@ -8,8 +8,7 @@
 import os
 from supabase import create_client
 
-#---前面程式碼相同---#
-# -----(定位線)以下修改----
+
 
 # =========================================================
 # ⚙️ GHA 專屬戰術控制面板 (AUDIO_EAT Exclusive)
