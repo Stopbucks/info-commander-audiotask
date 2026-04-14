@@ -6,6 +6,7 @@
 # [V5.8 更新] 2. 實裝 14MB 智能交接防線，保護中輕型機甲不被 Base64 塞爆。
 # [V5.8 更新] 3. 實裝物理級斷開：壓縮與轉譯嚴格分離，壓完即收隊，根除 OOM。
 # [V5.8 更新] 4. 實裝直連 Supabase 戰術發報，與迴圈 Jitter 防踩踏雜訊。
+# 新增直接無視轉譯失敗紀錄，直接壓縮檔案
 # ---------------------------------------------------------
 import os, time, random, gc, traceback, requests 
 from datetime import datetime, timezone          
@@ -75,10 +76,17 @@ def run_audio_to_stt_mission(sb=None):
         if panel.get("COMPRESS_ONLY") and r2_url.endswith('.opus'):
             print(f"🔄 [{worker_id}] 兵工廠產能閒置：自動轉職為【主力兵】支援 AI 轉譯！")
 
+
+
         check = sb.table("mission_intel").select("intel_status").eq("task_id", task_id).execute()
-        if check.data:
-            print(f"⏩ 任務 {task.get('source_name')} 已存在，尋找下一筆...")
+        
+        # 💡 [殭屍防禦] 如果是專職兵工廠(COMPRESS_ONLY)，無視情報紀錄，強制破門執行壓縮！
+        if check.data and not panel.get("COMPRESS_ONLY"):
+            print(f"⏩ 任務 {task.get('source_name')} 情報已存在，尋找下一筆...")
             continue 
+
+# -----(定位線)以上修改結束----
+#---後面程式碼相同---#
 
         print(f"🎯 [{worker_id}] 鎖定目標: {task.get('source_name')} (大小: {task.get('audio_size_mb')}MB)")
 
