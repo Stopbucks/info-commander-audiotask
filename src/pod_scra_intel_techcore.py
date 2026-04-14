@@ -19,9 +19,11 @@ def fetch_stt_tasks(sb, mem_tier, worker_id="UNKNOWN", fetch_limit=50):
     # ☠️ 毒藥天花板：全軍皆無視軟失敗 6 次(含)以上的絕對死檔
     query = query.or_("soft_failure_count.lt.6,soft_failure_count.is.null")
 
-    # 💡 [雷達盲區修復] 絕對物理防線：雷達只掃描 R2 倉庫裡有實體的檔案！
-    # 阻擋 r2_url 為空值、空字串、或殘留字串 "null" 的幽靈任務佔用 100 筆配額
-    query = query.not_("r2_url", "is", "null").neq("r2_url", "").neq("r2_url", "null")
+
+    # 💡 [雷達盲區修復] 絕對防彈物理防線 (相容 Supabase 2.12+)
+    # 捨棄容易報錯的否定語法 (not_, neq)，改用正向表列：
+    # 只要有副檔名 (.mp3 或 .opus 或 .m4a)，就代表這是真實存在的實體檔案！
+    query = query.or_("r2_url.ilike.%.mp3,r2_url.ilike.%.opus,r2_url.ilike.%.m4a")
 
     if mem_tier < 512:
         # 🏹 輕裝游擊隊 (FLY): 安全第一
