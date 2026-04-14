@@ -1,12 +1,12 @@
 # ---------------------------------------------------------
-# src/pod_scra_intel_core.py v5.8 (GHA 吞噬特遣隊與全軍統一防線版)
+# src/pod_scra_intel_core.py v5.8 (GHA 吞噬特遣隊與全軍統一防線 終極版)
 # 適用部隊：ALL (AUDIO_EAT, FLY, RENDER, KOYEB, ZEABUR, DBOS, HF)
 # 任務：專注於 STT 與 Summary 的核心戰鬥流程。
 # [V5.8 更新] 1. 將 AUDIO_EAT 納入重裝免死金牌名單，無視 14MB 移交限制。
 # [V5.8 更新] 2. 實裝 14MB 智能交接防線，保護中輕型機甲不被 Base64 塞爆。
 # [V5.8 更新] 3. 實裝物理級斷開：壓縮與轉譯嚴格分離，壓完即收隊，根除 OOM。
 # [V5.8 更新] 4. 實裝直連 Supabase 戰術發報，與迴圈 Jitter 防踩踏雜訊。
-# 新增直接無視轉譯失敗紀錄，直接壓縮檔案
+# [V5.8 更新] 5. 實裝殭屍防禦：專職壓縮機甲(兵工廠)將無視舊有失敗情報，強制破門壓縮。
 # ---------------------------------------------------------
 import os, time, random, gc, traceback, requests 
 from datetime import datetime, timezone          
@@ -76,17 +76,12 @@ def run_audio_to_stt_mission(sb=None):
         if panel.get("COMPRESS_ONLY") and r2_url.endswith('.opus'):
             print(f"🔄 [{worker_id}] 兵工廠產能閒置：自動轉職為【主力兵】支援 AI 轉譯！")
 
-
-
         check = sb.table("mission_intel").select("intel_status").eq("task_id", task_id).execute()
         
         # 💡 [殭屍防禦] 如果是專職兵工廠(COMPRESS_ONLY)，無視情報紀錄，強制破門執行壓縮！
         if check.data and not panel.get("COMPRESS_ONLY"):
             print(f"⏩ 任務 {task.get('source_name')} 情報已存在，尋找下一筆...")
             continue 
-
-# -----(定位線)以上修改結束----
-#---後面程式碼相同---#
 
         print(f"🎯 [{worker_id}] 鎖定目標: {task.get('source_name')} (大小: {task.get('audio_size_mb')}MB)")
 
@@ -210,82 +205,4 @@ def run_audio_to_stt_mission(sb=None):
             else:
                 print(f"💥 [{worker_id}] 第一棒打擊失敗: {err_str}")
                 delete_intel_task(sb, task_id)
-                if '404' in err_str and 'Not Found' in err_str:
-                    print(f"🕳️ [{worker_id}] 踩到 404 炸彈！退回物流佇列！")
-                    sb.table("mission_queue").update({"r2_url": None, "scrape_status": "pending"}).eq("id", task_id).execute()
-                else:
-                    increment_soft_failure(sb, task_id)
-            
-        finally:
-            gc.collect()
-
-# =========================================================
-# ✍️ 第二棒：STT to Summary 
-# =========================================================
-def run_stt_to_summary_mission(sb=None):
-    start_time = time.time()
-    worker_id = os.environ.get("WORKER_ID", "UNKNOWN_NODE")
-    
-    panel = get_tactical_panel(worker_id)
-    
-    if panel["SUMMARY_LIMIT"] <= 0:
-        print(f"⏸️ [{worker_id}] 面板指示：不參與摘要產線。")
-        return
-
-    time.sleep(random.uniform(3.0, 8.0))
-    if not sb: sb = get_sb()
-    s = get_secrets()
-    
-    tasks = fetch_summary_tasks(sb, fetch_limit=panel["RADAR_FETCH_LIMIT"])
-    actual_processed = 0
-    
-    for intel in tasks:
-        if actual_processed >= panel["SUMMARY_LIMIT"]: 
-            print(f"🏁 [{worker_id}] 第二棒已達目標產能 ({panel['SUMMARY_LIMIT']} 件)，交接。")
-            break
-        if time.time() - start_time > panel["SAFE_DURATION_SECONDS"]:
-            print(f"⏱️ [{worker_id}] 摘要產線逼近安全極限 ({panel['SAFE_DURATION_SECONDS']}s)，強制撤退！")
-            break
-            
-        # 🚀 [Jitter 雜訊] 摘要產線加入隨機延遲，降低 429 Rate Limit 風險
-        if actual_processed > 0:
-            delay = random.uniform(3.0, 6.0)
-            print(f"⏳ [{worker_id}] 戰術冷卻 {delay:.1f} 秒...")
-            time.sleep(delay)
-
-        task_id = intel['task_id']
-        provider = intel['ai_provider']
-        q_data = intel.get('mission_queue') or {}
-        r2_file = str(q_data.get('r2_url') or '').lower()
-        
-        if not r2_file or r2_file == 'null': continue 
-
-        print(f"✍️ [{worker_id}] 啟動摘要產線: {provider} | 任務: {q_data.get('episode_title', '')[:15]}...")
-        p_res = sb.table("pod_scra_metadata").select("content").eq("key_name", "PROMPT_FALLBACK").single().execute()
-        sys_prompt = p_res.data['content'] if p_res.data else "請分析情報。"
-
-        try:
-            summary = ""
-            if provider == "GROQ":
-                groq_agent = GroqFallbackAgent()
-                summary = groq_agent.generate_summary(intel['stt_text'], sys_prompt)
-            elif provider == "GEMINI":
-                summary = call_gemini_summary(s, q_data['r2_url'], sys_prompt)
-
-            if summary:
-                metrics = parse_intel_metrics(summary)
-                send_tg_report(s, q_data.get('source_name', '未知'), q_data.get('episode_title', '未知'), summary)
-                update_intel_success(sb, task_id, summary, metrics["score"])
-                print(f"🎉 [{worker_id}] 戰報發送成功，摘要已安全結案！")
-                actual_processed += 1 
-
-        except Exception as e:
-            err_str = str(e)
-            print(f"❌ [{worker_id}] 第二棒崩潰: {err_str}")
-            if '429' in err_str: print(f"⚠️ [{worker_id}] API Rate Limit，任務退回。")
-            elif '404' in err_str and 'Not Found' in err_str:
-                delete_intel_task(sb, task_id)
-                sb.table("mission_queue").update({"r2_url": None, "scrape_status": "pending"}).eq("id", task_id).execute()
-        
-        finally:
-            gc.collect()
+                if '404'
