@@ -1,9 +1,12 @@
 # ---------------------------------------------------------
-# 程式碼：src/pod_scra_intel_techcore.py (V5.5 雷達與兵器庫版)
+# 程式碼：src/pod_scra_intel_techcore.py (V5.8 GHA 吞噬特遣隊融合版)
 # 職責：1. [雷達] fetch_stt_tasks：依據 mem_tier 與 worker_id 進行動態三級分流。
 #       2. [容錯] increment_soft_failure：處理失敗不墜機，打上標記交接重裝。
-#       3. [火力] 封裝 Supabase 讀寫、AI (Gemini/Groq) 呼叫與 Telegram 戰報。
-# 特色：無狀態、用完即丟！將記憶體消耗限制在函式內部，確保機甲穩定。
+#       3. [火力] 封裝 Supabase 讀寫、手刻 REST API (Gemini/Groq) 呼叫。
+# [V5.8 更新] 1. 權限解放：將 AUDIO_EAT 納入重裝雷達權限，賦予無差別吞噬巨型死檔能力。
+# [V5.8 更新] 2. 狀態淨化：容錯推進精準寫入 SQL NULL (None)，修復物流引擎盲區。
+# [V5.8 更新] 3. 裝甲升級：輕裝雷達校準 (%.opus)，並為 Gemini 手刻 API 加裝 14MB 載重安檢與錯誤黑盒子。
+# 適用：AUDIO_EAT (GHA 獨立倉庫專用，亦相容中輕型機甲)
 # ---------------------------------------------------------
 import requests, base64, re, gc
 from datetime import datetime
@@ -20,22 +23,18 @@ def fetch_stt_tasks(sb, mem_tier, worker_id="UNKNOWN", fetch_limit=50):
 
     if mem_tier < 512:
         # 🏹 輕裝游擊隊 (FLY): 安全第一
-        # 條件：無軟失敗(0/null) + 已經壓縮(opt_) + 小於 15MB
-        # 排序：檔案由小至大 (升冪 desc=False)
+        # 💡 雷達校準：精準鎖定 %.opus，接手兵工廠產出
         query = query.or_("soft_failure_count.eq.0,soft_failure_count.is.null") \
-                     .not_("audio_size_mb", "is", "null").ilike("r2_url", "opt_%").lt("audio_size_mb", 15) \
+                     .gte("audio_size_mb", 0).ilike("r2_url", "%.opus").lt("audio_size_mb", 15) \
                      .order("audio_size_mb", desc=False)
                      
-    elif worker_id in ["DBOS", "HUGGINGFACE"]:
-        # 🚜 重裝巨獸 (HF / DBOS)：無差別碾壓
-        # 條件：完全無視軟失敗次數 (受天花板保護即可)
-        # 排序：檔案由大至小 (降冪 desc=True)，優先處理 null (剛載好還沒測大小的原始檔)
+    # 🚀 修正核心：將 "AUDIO_EAT" 加入重裝巨獸行列，賦予無差別下載大檔權限！
+    elif worker_id in ["DBOS", "HUGGINGFACE", "AUDIO_EAT"]:
+        # 🚜 重裝巨獸 (HF / DBOS / GHA吞噬者)：無差別碾壓
         query = query.order("audio_size_mb", desc=True, nullsfirst=True)
                      
     else:
         # 🛡️ 中型部隊 (RENDER / KOYEB / ZEABUR)：穩健推進
-        # 排序一：軟失敗次數由少至多 (升冪 desc=False)，優先處理健康的 (null/0 -> 1 -> 2)
-        # 排序二：同次數下，檔案由大至小 (降冪 desc=True)
         query = query.order("soft_failure_count", desc=False, nullsfirst=True) \
                      .order("audio_size_mb", desc=True, nullsfirst=True)
         
@@ -49,7 +48,7 @@ def increment_soft_failure(sb, task_id):
         sb.table("mission_queue").update({
             "soft_failure_count": current_count + 1,
             "scrape_status": "success", 
-            "r2_url": "null" # 抹除連結，強迫下一手機甲重新評估與下載
+            "r2_url": None # 🚀 狀態淨化：精準寫入 Python None，對應資料庫 SQL NULL
         }).eq("id", task_id).execute()
         print(f"🚩 [容錯推進] 任務 {task_id[:8]} 失敗次數 +1 (目前: {current_count + 1}/6)")
     except Exception as e: 
@@ -110,19 +109,35 @@ def call_groq_stt(secrets, r2_url_path):
 def call_gemini_summary(secrets, r2_url_path, sys_prompt):
     url = f"{secrets['R2_URL']}/{r2_url_path}"
     m_type = "audio/ogg" if ".opus" in url.lower() or ".ogg" in url.lower() else "audio/mpeg"
-    raw_bytes = requests.get(url, timeout=120).content
+    
+    resp = requests.get(url, timeout=120)
+    resp.raise_for_status()
+    raw_bytes = resp.content
+    
+    # 💡 防護一：起飛前安檢 (14MB 硬上限，防止 Base64 塞爆 API)
+    file_size_mb = len(raw_bytes) / (1024 * 1024)
+    if file_size_mb > 14.0:
+        del raw_bytes; gc.collect() # 攔截成功，釋放記憶體
+        raise Exception(f"越權攔截：壓縮後檔案仍達 {file_size_mb:.1f}MB，超越 REST API 載重極限，退回交接給重裝部隊。")
+
     b64_audio = base64.b64encode(raw_bytes).decode('utf-8')
     del raw_bytes; gc.collect() 
+    
     gemini_model = "gemini-2.5-flash"
     g_url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={secrets['GEMINI_KEY']}"
     payload = {"contents": [{"parts": [{"text": sys_prompt}, {"inline_data": {"mime_type": m_type, "data": b64_audio}}]}]}
+    
     ai_resp = requests.post(g_url, json=payload, timeout=180)
     del b64_audio, payload; gc.collect() 
+    
     if ai_resp.status_code == 200:
         cands = ai_resp.json().get('candidates', [])
         if cands and cands[0].get('content'): return cands[0]['content']['parts'][0].get('text', "")
         return ""
-    else: raise Exception(f"Gemini API Error: HTTP {ai_resp.status_code}")
+    else: 
+        # 💡 防護二：墜機黑盒子 (擷取原生錯誤訊息，方便除錯)
+        err_msg = ai_resp.text[:200] 
+        raise Exception(f"Gemini API 拒絕存取 (HTTP {ai_resp.status_code}): {err_msg}")
 
 def send_tg_report(secrets, source, title, summary):
     safe_summary = summary[:3800] + ("...\n(因字數限制截斷)" if len(summary) > 3800 else "")
