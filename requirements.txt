@@ -1,4 +1,4 @@
-# --- S-Plan Fortress v3.1 全軍統一版清單 ---
+# --- 此檔為AUDIO_EAT  requirements.txt ---
 # --- S-Plan Fortress v3.2 強化版清單 ---
 # 針對 GitHub Actions 與多裝置同步優化
 
