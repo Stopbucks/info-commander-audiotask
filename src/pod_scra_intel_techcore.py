@@ -1,9 +1,9 @@
 # ---------------------------------------------------------
-# 程式碼：src/pod_scra_intel_techcore.py (V5.8.1 雷達實體濾鏡 終極版)
+# 程式碼：src/pod_scra_intel_techcore.py (V5.8.2 雷達防彈濾鏡 終極版)
 # 職責：1. [雷達] fetch_stt_tasks：依據 mem_tier 與 worker_id 進行動態三級分流。
 #       2. [容錯] increment_soft_failure：處理失敗不墜機，打上標記交接重裝。
 #       3. [火力] 封裝 Supabase 讀寫、手刻 REST API (Gemini/Groq) 呼叫。
-# [V5.8.1 更新] 破除雷達盲區！過濾 r2_url 為空的幽靈任務，防止其佔滿 100 筆掃描配額。
+# [V5.8.2 更新] 破除字元解析盲區！改用雙重 neq 排除空值，確保雷達 100% 鎖定實體檔案。
 # 適用：全軍通用 (AUDIO_EAT, FLY, RENDER, KOYEB, ZEABUR, DBOS, HF)
 # ---------------------------------------------------------
 import requests, base64, re, gc
@@ -19,11 +19,10 @@ def fetch_stt_tasks(sb, mem_tier, worker_id="UNKNOWN", fetch_limit=50):
     # ☠️ 毒藥天花板：全軍皆無視軟失敗 6 次(含)以上的絕對死檔
     query = query.or_("soft_failure_count.lt.6,soft_failure_count.is.null")
 
-
     # 💡 [雷達盲區修復] 絕對防彈物理防線 (相容 Supabase 2.12+)
-    # 捨棄容易報錯的否定語法 (not_, neq)，改用正向表列：
-    # 只要有副檔名 (.mp3 或 .opus 或 .m4a)，就代表這是真實存在的實體檔案！
-    query = query.or_("r2_url.ilike.%.mp3,r2_url.ilike.%.opus,r2_url.ilike.%.m4a")
+    # 捨棄容易解析失敗的 OR 萬用字元，直接使用雙重 neq (不等於)：
+    # 排除空字串 "" 與字串 "null" (此舉會連帶完美過濾掉 SQL NULL，只留下真實檔名)
+    query = query.neq("r2_url", "").neq("r2_url", "null")
 
     if mem_tier < 512:
         # 🏹 輕裝游擊隊 (FLY): 安全第一
