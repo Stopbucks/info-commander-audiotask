@@ -1,12 +1,10 @@
 # ---------------------------------------------------------
-# 程式碼：src/pod_scra_intel_techcore.py (V5.8 GHA 吞噬特遣隊融合版)
+# 程式碼：src/pod_scra_intel_techcore.py (V5.8.1 雷達實體濾鏡 終極版)
 # 職責：1. [雷達] fetch_stt_tasks：依據 mem_tier 與 worker_id 進行動態三級分流。
 #       2. [容錯] increment_soft_failure：處理失敗不墜機，打上標記交接重裝。
 #       3. [火力] 封裝 Supabase 讀寫、手刻 REST API (Gemini/Groq) 呼叫。
-# [V5.8 更新] 1. 權限解放：將 AUDIO_EAT 納入重裝雷達權限，賦予無差別吞噬巨型死檔能力。
-# [V5.8 更新] 2. 狀態淨化：容錯推進精準寫入 SQL NULL (None)，修復物流引擎盲區。
-# [V5.8 更新] 3. 裝甲升級：輕裝雷達校準 (%.opus)，並為 Gemini 手刻 API 加裝 14MB 載重安檢與錯誤黑盒子。
-# 適用：AUDIO_EAT (GHA 獨立倉庫專用，亦相容中輕型機甲)
+# [V5.8.1 更新] 破除雷達盲區！過濾 r2_url 為空的幽靈任務，防止其佔滿 100 筆掃描配額。
+# 適用：全軍通用 (AUDIO_EAT, FLY, RENDER, KOYEB, ZEABUR, DBOS, HF)
 # ---------------------------------------------------------
 import requests, base64, re, gc
 from datetime import datetime
@@ -21,6 +19,10 @@ def fetch_stt_tasks(sb, mem_tier, worker_id="UNKNOWN", fetch_limit=50):
     # ☠️ 毒藥天花板：全軍皆無視軟失敗 6 次(含)以上的絕對死檔
     query = query.or_("soft_failure_count.lt.6,soft_failure_count.is.null")
 
+    # 💡 [雷達盲區修復] 絕對物理防線：雷達只掃描 R2 倉庫裡有實體的檔案！
+    # 阻擋 r2_url 為空值、空字串、或殘留字串 "null" 的幽靈任務佔用 100 筆配額
+    query = query.not_("r2_url", "is", "null").neq("r2_url", "").neq("r2_url", "null")
+
     if mem_tier < 512:
         # 🏹 輕裝游擊隊 (FLY): 安全第一
         # 💡 雷達校準：精準鎖定 %.opus，接手兵工廠產出
@@ -28,7 +30,6 @@ def fetch_stt_tasks(sb, mem_tier, worker_id="UNKNOWN", fetch_limit=50):
                      .gte("audio_size_mb", 0).ilike("r2_url", "%.opus").lt("audio_size_mb", 15) \
                      .order("audio_size_mb", desc=False)
                      
-    # 🚀 修正核心：將 "AUDIO_EAT" 加入重裝巨獸行列，賦予無差別下載大檔權限！
     elif worker_id in ["DBOS", "HUGGINGFACE", "AUDIO_EAT"]:
         # 🚜 重裝巨獸 (HF / DBOS / GHA吞噬者)：無差別碾壓
         query = query.order("audio_size_mb", desc=True, nullsfirst=True)
