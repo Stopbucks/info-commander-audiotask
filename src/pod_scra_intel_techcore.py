@@ -1,34 +1,29 @@
 # ---------------------------------------------------------
-# 程式碼：src/pod_scra_intel_techcore.py (V5.8.2 雷達防彈濾鏡 終極版)
+# 程式碼：src/pod_scra_intel_techcore.py (V5.9 VIEW 圖大檔_雷達防彈濾鏡 終極版)
 # 職責：1. [雷達] fetch_stt_tasks：依據 mem_tier 與 worker_id 進行動態三級分流。
 #       2. [容錯] increment_soft_failure：處理失敗不墜機，打上標記交接重裝。
 #       3. [火力] 封裝 Supabase 讀寫、手刻 REST API (Gemini/Groq) 呼叫。
 # [V5.8.2 更新] 破除字元解析盲區！改用雙重 neq 排除空值，確保雷達 100% 鎖定實體檔案。
 # 適用：全軍通用 (AUDIO_EAT, FLY, RENDER, KOYEB, ZEABUR, DBOS, HF)
+# 修改，超級大檔透過VIEW圖，進行冷卻30分鐘以上採用，降低拒絕率。
 # ---------------------------------------------------------
 import requests, base64, re, gc
 from datetime import datetime
-
 # =========================================================
 # 📡 戰略雷達 (Strategic Radar)
 # =========================================================
 def fetch_stt_tasks(sb, mem_tier, worker_id="UNKNOWN", fetch_limit=50):
-    """【低耦合戰略閘道】依據軟失敗次數與檔案大小進行動態三級分流"""
-    query = sb.table("view_worker_task_inbox").select("*")
+    """【低耦合戰略閘道】依據 mem_tier 進行動態三級分流 (由 Supabase VIEW 負責全域冷卻與過濾)"""
     
-    # ☠️ 毒藥天花板：全軍皆無視軟失敗 6 次(含)以上的絕對死檔
-    query = query.or_("soft_failure_count.lt.6,soft_failure_count.is.null")
-
-    # 💡 [雷達盲區修復] 絕對防彈物理防線 (相容 Supabase 2.12+)
-    # 捨棄容易解析失敗的 OR 萬用字元，直接使用雙重 neq (不等於)：
-    # 排除空字串 "" 與字串 "null" (此舉會連帶完美過濾掉 SQL NULL，只留下真實檔名)
-    query = query.neq("r2_url", "").neq("r2_url", "null")
+    # 🚀 戰略升級：直接讀取「智能冷卻檢視表」，自動享有防重複、軟失敗剔除與大檔冷卻裝甲
+    query = sb.table("vw_safe_mission_queue").select("*")
+    
+    # (註：原本的 soft_failure_count 與 r2_url != null 判斷已由 VIEW 處理，Python 端無需重複執行)
 
     if mem_tier < 512:
         # 🏹 輕裝游擊隊 (FLY): 安全第一
         # 💡 雷達校準：精準鎖定 %.opus，接手兵工廠產出
-        query = query.or_("soft_failure_count.eq.0,soft_failure_count.is.null") \
-                     .gte("audio_size_mb", 0).ilike("r2_url", "%.opus").lt("audio_size_mb", 15) \
+        query = query.gte("audio_size_mb", 0).ilike("r2_url", "%.opus").lt("audio_size_mb", 15) \
                      .order("audio_size_mb", desc=False)
                      
     elif worker_id in ["DBOS", "HUGGINGFACE", "AUDIO_EAT"]:
@@ -41,7 +36,7 @@ def fetch_stt_tasks(sb, mem_tier, worker_id="UNKNOWN", fetch_limit=50):
                      .order("audio_size_mb", desc=True, nullsfirst=True)
         
     return query.limit(fetch_limit).execute().data or []
-
+    
 def increment_soft_failure(sb, task_id):
     """【容錯推進】遇到異常不崩潰，僅增加失敗計數並抹除 R2，讓系統下次動態重試"""
     try:
