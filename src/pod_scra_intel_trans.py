@@ -1,16 +1,11 @@
 # ---------------------------------------------------------
-# 程式碼：src/pod_scra_intel_trans.py  (V5.5 面板統御防崩潰版)
+# 程式碼：src/pod_scra_intel_trans.py  (V5.9.8 GHA 迷彩掛載與防彈下載版)
 # [節拍] 狀態機邏輯：透過 MAX_TICKS 控制循環。若主將設為 3 拍，則依序執行 [1:下載, 2:摘要, 3:轉譯]。
-# [節拍] 判斷公式：利用除以 2 的餘數 (current_tick % 2 != 0) 來動態交替分配任務型態。
-# [節拍] 任務分配：單數拍 (1, 3, 5...) 執行轉譯 (STT)；雙數拍 (2, 4, 6...) 執行摘要 (Summary)。
-
-# [主將範例] FLY 為主將 (MAX=12)：僅在「第 1 拍」出門抓音檔，第 2~12 拍交替做摘要與轉譯 (低頻進貨)。
-# [主將範例] RENDER 為主將 (MAX=6)：同樣在「第 1 拍」抓音檔，第 2~6 拍做摘要與轉譯 (高頻進貨)。
-# [後勤範例] 若身分為「後勤兵」：完全不管 MAX 是多少，【永遠不出門抓檔】，只專心交替做轉譯與摘要。
-# [節拍總結] MAX_TICKS 的大小，實質上決定了「主將多久出門進貨一次」的冷卻週期。
-
+# [主將範例] RENDER 為主將 (MAX=6)：在「第 1 拍」抓音檔，第 2~6 拍做摘要與轉譯 (高頻進貨)。
 # 修正：1. 徹底拔除 audio_officers 與冗餘的傳入參數，避免呼叫崩潰。
 # 2. 將 max_ticks 交由 src.pod_scra_intel_control 面板動態管理，落實低耦合。
+# [V5.9.8 升級] 全面掛載千面人迷彩模組 (Tier 1 絕對白名單)，掩護 GHA 高風險 IP。
+# [V5.9.8 升級] 實裝 3MB 切片與 0.5s 擬人化緩衝，防止 CDN 掐斷資料中心極速下載。
 # ---------------------------------------------------------
 
 import os, requests, time, random, gc, json
@@ -18,6 +13,7 @@ from urllib.parse import urlparse
 from datetime import datetime, timezone, timedelta
 from src.pod_scra_intel_r2 import get_s3_client 
 from src.pod_scra_intel_control import get_tactical_panel # 🚀 引入控制面板
+from src.pod_scra_intel_camouflage import get_camouflage_headers # 🚀 引入千面人偽裝模組
 
 def execute_fortress_stages(sb, config, s_log_func):
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -50,7 +46,9 @@ def execute_fortress_stages(sb, config, s_log_func):
         s_log_func(sb, "STATE_M", "INFO", f"{role_name} 執行階段 1/3: 外部走私下載")
         rule_res = sb.table("pod_scra_rules").select("domain").in_("worker_id", [worker_id, "ALL"]).gte("expired_at", now_iso).execute()
         my_blacklist = [r['domain'] for r in rule_res.data] if rule_res.data else []
-        run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist)
+        
+        # 🚀 傳入 is_duty_officer 給物流引擎以換取正確的迷彩
+        run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, is_duty_officer)
     
     elif current_tick % 2 != 0 or (not is_duty_officer and current_tick == 1):
         s_log_func(sb, "STATE_M", "INFO", f"{role_name} 啟動轉譯產線 (由面板接管)")
@@ -65,7 +63,7 @@ def execute_fortress_stages(sb, config, s_log_func):
     sb.table("pod_scra_tactics").update({"last_heartbeat_at": now_iso, "workers_health": health, "worker_status": w_status}).eq("id", 1).execute()
 
 
-def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist):
+def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, is_duty_officer=True):
     query = sb.table("mission_queue").select("*, mission_program_master(*)").eq("scrape_status", "success").is_("r2_url", "null").lte("troop2_start_at", now_iso).order("created_at", desc=True)\
         .limit(1)       # 伺服器下載數量更動
     tasks = query.execute().data or []
@@ -74,14 +72,12 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist):
     s3 = get_s3_client()
     bucket = os.environ.get("R2_BUCKET_NAME")
     worker_id = config.get('WORKER_ID', 'UNKNOWN')
-    UAS = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"]
     
     # 🚀 [Jitter 1] 進入外部伺服器前的初步擬人化延遲 (2~5秒)
     time.sleep(random.uniform(2.0, 5.0))
     
     for idx, m in enumerate(tasks):
         # 🚀 [Jitter 2] 若有多筆任務，在每一筆檔案下載之間加入延遲 (5~12秒)
-        # 註：目前 query.limit(1) 不會觸發此段，但若未來放寬 limit，此處將自動生效！
         if idx > 0:
             time.sleep(random.uniform(5.0, 12.0))
 
@@ -94,11 +90,17 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist):
         tmp_path = f"/tmp/dl_{m['id'][:8]}{ext}"
         
         try:
-            headers = {"User-Agent": random.choice(UAS), "Accept": "*/*"}
-            with requests.get(f_url, stream=True, timeout=120, headers=headers) as r:
+            # 🚀 核心升級：向迷彩庫申請 Tier 1 動態偽裝，取代原本寫死的 Chrome UA
+            dynamic_headers = get_camouflage_headers(worker_id, is_duty_officer)
+            
+            # 💡 黃金比例防護：timeout 延長至 180s, 3MB 切片, 喘息 0.5s 模擬真實網速
+            with requests.get(f_url, stream=True, timeout=180, headers=dynamic_headers) as r:
                 r.raise_for_status()
                 with open(tmp_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=1024*1024): f.write(chunk)
+                    for chunk in r.iter_content(chunk_size=3 * 1024 * 1024): 
+                        if chunk: 
+                            f.write(chunk)
+                            time.sleep(0.5) # 模擬緩衝，防抓太快被踢
                     
             s3.upload_file(tmp_path, bucket, os.path.basename(tmp_path))
             sb.table("mission_queue").update({"scrape_status": "completed", "r2_url": os.path.basename(tmp_path)}).eq("id", m['id']).execute()
