@@ -114,7 +114,7 @@ def run_audio_to_stt_mission(sb=None):
                     update_payload = {
                         "r2_url": new_url, 
                         "audio_ext": ".opus", 
-                        "audio_size_mb": round(compressed_size_mb, 1)
+                        "audio_size_mb": int(round(compressed_size_mb, 0)) # 🚀 確保回傳純整數
                     }
 
                     if compressed_size_mb < 50.0:
@@ -258,7 +258,8 @@ def run_stt_to_summary_mission(sb=None):
 
             if summary:
                 metrics = parse_intel_metrics(summary)
-                send_tg_report(s, q_data.get('source_name', '未知'), q_data.get('episode_title', '未知'), summary)
+                # 🚀 引入 V5.9.2 安全傳參：啟動 TG 靜默防禦網
+                send_tg_report(s, q_data.get('source_name', '未知'), q_data.get('episode_title', '未知'), summary, sb, worker_id)
                 update_intel_success(sb, task_id, summary, metrics["score"])
                 print(f"🎉 [{worker_id}] 戰報發送成功，摘要已安全結案！")
                 actual_processed += 1 
