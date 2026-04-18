@@ -1,11 +1,14 @@
 # ---------------------------------------------------------
-# S-Plan Fortress: GHA STT Assault v5.8 (重裝吞噬特遣隊)
+# S-Plan Fortress: GHA STT Assault v5.9.9 (重裝吞噬特遣隊)
 # [任務] 接替 DBOS 退休空缺，擔任全軍第一棒「純壓縮」兵工廠。
 # [更新] 1. 高頻打擊：改為每 4 小時啟動一次。
 # [更新] 2. 產能倍增：STT_LIMIT 提升至 10 筆，專攻巨型音檔壓縮。
 # [更新] 3. 戰線拉長：撤退時限提升至 70 分鐘，對應 YAML 寬限期至 90 分鐘。
+# [V5.9.9 終極防禦] 實裝強制 DNS 鎖定，根除 Temporary failure in name resolution 崩潰。
+# [V5.9.9 終極防禦] 確保系統級 FFmpeg 與相依套件完整安裝。
 # ---------------------------------------------------------
-name: GHA STT Assault (V5.8 重裝吞噬特遣隊)
+
+name: GHA STT Assault (V5.9.9 重裝吞噬特遣隊)
 
 on:
   schedule:
@@ -29,8 +32,17 @@ jobs:
         python-version: '3.10'
         cache: 'pip'
 
+    # 🚀 [戰術防禦 A]：強制鎖定 DNS，防止 GitHub 網路抽風導致找不到資料庫
+    - name: 🌐 強制修復 DNS 解析 (Zero-Trust Network)
+      run: |
+        sudo bash -c 'echo "nameserver 8.8.8.8" > /etc/resolv.conf'
+        sudo bash -c 'echo "nameserver 1.1.1.1" >> /etc/resolv.conf'
+        echo "✅ DNS 解析已強制鎖定至 Google 與 Cloudflare"
+
+    # 🚀 [戰術防禦 B]：確保 FFmpeg 與 Python 套件相依性
     - name: Install Dependencies
       run: |
+        sudo apt-get update && sudo apt-get install -y ffmpeg
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
