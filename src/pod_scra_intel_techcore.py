@@ -1,5 +1,5 @@
 # ---------------------------------------------------------
-# 程式碼：src/pod_scra_intel_techcore.py (V5.9.4 全軍通用：核彈隔離與防彈雷達版)
+# 程式碼：src/pod_scra_intel_techcore.py (V5.9.5 全軍通用：核彈隔離與防彈雷達版)
 # 職責：1. [雷達] fetch_stt_tasks：依據 mem_tier 與 worker_id 進行動態三級分流。
 #       2. [容錯] increment_soft_failure：處理失敗不墜機，打上標記交接重裝。
 #       3. [火力] 封裝 Supabase 讀寫、手刻 REST API (Gemini/Groq) 呼叫。
@@ -8,10 +8,13 @@
 # 修改，超級大檔透過VIEW圖，進行冷卻30分鐘以上採用，降低拒絕率。為了因應GEMINI 拒絕翻譯進行"超級大檔"交由AUDIO_EAT處理。
 # [V5.9.4 更新] 實裝「核彈隔離區」：全軍嚴禁觸碰指派給 AUDIO_EAT 的超大死檔。
 # [V5.9.4 同步] 補齊 AUDIO_EAT 遺漏的 Gemini SDK (File API) 與靜默 TG 戰報防禦。
+# [V5.9.5 換裝] 核心連線套件全面升級為 curl_cffi，統一全軍 HTTP 引擎。
 # 適用：全軍通用 (AUDIO_EAT, FLY, RENDER, KOYEB, ZEABUR, HF, RAILWAY)
 # ---------------------------------------------------------
-import requests, base64, re, gc
+import base64, re, gc
 from datetime import datetime
+from curl_cffi import requests # 🚀 換裝：使用 curl_cffi 替換原生 requests
+
 
 # =========================================================
 # 📡 戰略雷達 (Strategic Radar)
