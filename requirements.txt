@@ -1,21 +1,25 @@
-# --- 此檔為AUDIO_EAT  requirements.txt ---
-# --- S-Plan Fortress v3.2 強化版清單 ---
+# -------------------------------------------------------------
+# --- S-Plan Fortress AUDIO_EAT v5.9.9 專用裝備清單 ---
 # 針對 GitHub Actions 與多裝置同步優化
-
+# [V5.9.9 換裝] 拔除原生 requests，全面升級為 curl_cffi，實裝 TLS 指紋擬態突破 403。
+# [V5.9.9 升級] 同步全軍標準，升級 supabase 與 postgrest 支援 nullsfirst 語法。
+# -------------------------------------------------------------
 flask
 gunicorn
-requests
-supabase==2.12.0
-httpx==0.27.2
+# requests 👈 🚀 [已退役] 改由 curl_cffi 接管全域連線
+curl_cffi>=0.7.0    # 🚀 [新裝備] 完美模擬真實設備 TLS 指紋，突破 403 封鎖
+supabase>=2.4.0     # 🚀 強制升級：支援 nullsfirst=True
+postgrest>=0.16.4   # 🚀 強制升級：supabase 底層查詢引擎
+httpx>=0.27.2       # 🚀 與 Vercel 同步
 python-dotenv
 boto3
 feedparser
 apscheduler==3.10.4
 pytz
-imageio-ffmpeg
-groq
+imageio-ffmpeg      # 🚀 破局武裝：自帶底層 ffmpeg 引擎，免除 OS 設定
+groq                # 🛡️ B計畫專用：Groq 備援防爆模組(輕型套件)
 
-# 🚀 補強裝備區
-google-generativeai  # 對接 Gemini 核心
-tenacity             # 針對網路不穩的自動重試機制
-psutil               # 戰地監控：防止記憶體溢位
+# 🚀 GHA 專屬補強裝備區
+google-generativeai # 💣 重裝武器：Gemini 官方 SDK，專剋 14MB 以上大檔
+tenacity            # 針對網路不穩的自動重試機制
+psutil              # 戰地監控：防止記憶體溢位
