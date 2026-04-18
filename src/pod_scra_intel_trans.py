@@ -1,19 +1,24 @@
 # ---------------------------------------------------------
-# 程式碼：src/pod_scra_intel_trans.py  (V5.9.8 GHA 迷彩掛載與防彈下載版)
+# 程式碼：src/pod_scra_intel_trans.py  (V5.9.9 GHA 終極擬態與防彈下載版)
 # [節拍] 狀態機邏輯：透過 MAX_TICKS 控制循環。若主將設為 3 拍，則依序執行 [1:下載, 2:摘要, 3:轉譯]。
 # [主將範例] RENDER 為主將 (MAX=6)：在「第 1 拍」抓音檔，第 2~6 拍做摘要與轉譯 (高頻進貨)。
 # 修正：1. 徹底拔除 audio_officers 與冗餘的傳入參數，避免呼叫崩潰。
 # 2. 將 max_ticks 交由 src.pod_scra_intel_control 面板動態管理，落實低耦合。
 # [V5.9.8 升級] 全面掛載千面人迷彩模組 (Tier 1 絕對白名單)，掩護 GHA 高風險 IP。
 # [V5.9.8 升級] 實裝 3MB 切片與 0.5s 擬人化緩衝，防止 CDN 掐斷資料中心極速下載。
+# [隱蔽] 全面換裝 curl_cffi，實裝底層 TLS 指紋擬態 (Impersonate Safari)。
+# [隱蔽] 導入 camouflage 千面人模組，透過機甲基因種子達成每日一致性偽裝。
+# [防禦] 實裝 3MB 切片與 0.5s 擬人化緩衝，配合 Session 保持，破解跳轉陷阱與 403 封鎖。
+# [V5.9.9 更新] 徹底拔除原生 requests，改用 curl_cffi 達成最高等級隱身下載。
 # ---------------------------------------------------------
 
-import os, requests, time, random, gc, json
+import os, time, random, gc, json
+from curl_cffi import requests # 🚀 換裝：使用 curl_cffi 替換原生 requests
 from urllib.parse import urlparse
 from datetime import datetime, timezone, timedelta
 from src.pod_scra_intel_r2 import get_s3_client 
-from src.pod_scra_intel_control import get_tactical_panel # 🚀 引入控制面板
-from src.pod_scra_intel_camouflage import get_camouflage_headers # 🚀 引入千面人偽裝模組
+from src.pod_scra_intel_control import get_tactical_panel 
+from src.pod_scra_intel_camouflage import get_camouflage_headers 
 
 def execute_fortress_stages(sb, config, s_log_func):
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -65,7 +70,7 @@ def execute_fortress_stages(sb, config, s_log_func):
 
 def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, is_duty_officer=True):
     query = sb.table("mission_queue").select("*, mission_program_master(*)").eq("scrape_status", "success").is_("r2_url", "null").lte("troop2_start_at", now_iso).order("created_at", desc=True)\
-        .limit(1)       # 伺服器下載數量更動
+        .limit(1)
     tasks = query.execute().data or []
     if not tasks: return
     
@@ -73,11 +78,10 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, is_duty_
     bucket = os.environ.get("R2_BUCKET_NAME")
     worker_id = config.get('WORKER_ID', 'UNKNOWN')
     
-    # 🚀 [Jitter 1] 進入外部伺服器前的初步擬人化延遲 (2~5秒)
+    # 🚀 [Jitter 1] 進入外部伺服器前的初步擬人化延遲
     time.sleep(random.uniform(2.0, 5.0))
     
     for idx, m in enumerate(tasks):
-        # 🚀 [Jitter 2] 若有多筆任務，在每一筆檔案下載之間加入延遲 (5~12秒)
         if idx > 0:
             time.sleep(random.uniform(5.0, 12.0))
 
@@ -90,25 +94,29 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, is_duty_
         tmp_path = f"/tmp/dl_{m['id'][:8]}{ext}"
         
         try:
-            # 🚀 核心升級：向迷彩庫申請 Tier 1 動態偽裝，取代原本寫死的 Chrome UA
+            # 🚀 核心擬態：向迷彩庫申請動態偽裝
             dynamic_headers = get_camouflage_headers(worker_id, is_duty_officer)
             
-            # 💡 黃金比例防護：timeout 延長至 180s, 3MB 切片, 喘息 0.5s 模擬真實網速
-            with requests.get(f_url, stream=True, timeout=180, headers=dynamic_headers) as r:
-                r.raise_for_status()
-                with open(tmp_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=3 * 1024 * 1024): 
-                        if chunk: 
-                            f.write(chunk)
-                            time.sleep(0.5) # 模擬緩衝，防抓太快被踢
+            # 🚀 戰術升級：使用 Session 保持與 Safari 15_3 底層指紋擬態
+            with requests.Session(impersonate="safari15_3") as session:
+                # 💡 延長超時至 180s，處理大檔下載
+                with session.get(f_url, stream=True, timeout=180, headers=dynamic_headers) as r:
+                    r.raise_for_status()
+                    with open(tmp_path, 'wb') as f:
+                        # 💡 3MB 分片下載，每片休息 0.5s，規避流量異常偵測
+                        for chunk in r.iter_content(chunk_size=3 * 1024 * 1024): 
+                            if chunk: 
+                                f.write(chunk)
+                                time.sleep(0.5) 
                     
             s3.upload_file(tmp_path, bucket, os.path.basename(tmp_path))
             sb.table("mission_queue").update({"scrape_status": "completed", "r2_url": os.path.basename(tmp_path)}).eq("id", m['id']).execute()
             s_log_func(sb, "DOWNLOAD", "SUCCESS", f"✅ 物資入庫: {m['id'][:8]}")
             
         except requests.exceptions.HTTPError as he:
-            if he.response.status_code in [403, 401, 429]:
-                s_log_func(sb, "DOWNLOAD", "ERROR", f"🚫 [{worker_id}] 遭封鎖 ({he.response.status_code})")
+            status_code = getattr(he.response, 'status_code', 0)
+            if status_code in [403, 401, 429]:
+                s_log_func(sb, "DOWNLOAD", "ERROR", f"🚫 [{worker_id}] 遭封鎖 ({status_code})")
                 victim_freeze = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
                 ally_freeze = (datetime.now(timezone.utc) + timedelta(hours=12)).isoformat()
                 sb.table("pod_scra_rules").insert([
@@ -116,7 +124,7 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, is_duty_
                     {"worker_id": "ALL", "domain": target_domain, "rule_type": "VIGILANCE", "expired_at": ally_freeze}
                 ]).execute()
             else:
-                s_log_func(sb, "DOWNLOAD", "ERROR", f"❌ 搬運異常: {he.response.status_code}")
+                s_log_func(sb, "DOWNLOAD", "ERROR", f"❌ 搬運異常: {status_code}")
         except Exception as e: 
             s_log_func(sb, "DOWNLOAD", "ERROR", f"❌ 搬運失敗: {str(e)}")
         finally:
