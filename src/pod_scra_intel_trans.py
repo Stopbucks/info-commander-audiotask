@@ -99,8 +99,9 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, is_duty_
             
             # 🚀 戰術升級：使用 Session 保持與 Safari 15_3 底層指紋擬態
             with requests.Session(impersonate="safari15_3") as session:
-                # 💡 延長超時至 180s，處理大檔下載
-                with session.get(f_url, stream=True, timeout=180, headers=dynamic_headers) as r:
+                # 💡 拆除 __enter__ 炸彈：不使用 with，改為直接賦值
+                r = session.get(f_url, stream=True, timeout=180, headers=dynamic_headers)
+                try:
                     r.raise_for_status()
                     with open(tmp_path, 'wb') as f:
                         # 💡 3MB 分片下載，每片休息 0.5s，規避流量異常偵測
@@ -108,6 +109,9 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, is_duty_
                             if chunk: 
                                 f.write(chunk)
                                 time.sleep(0.5) 
+                finally:
+                    # 💡 安全收尾：明確關閉連線
+                    r.close()
                     
             s3.upload_file(tmp_path, bucket, os.path.basename(tmp_path))
             sb.table("mission_queue").update({"scrape_status": "completed", "r2_url": os.path.basename(tmp_path)}).eq("id", m['id']).execute()
