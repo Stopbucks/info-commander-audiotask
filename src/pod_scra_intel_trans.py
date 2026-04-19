@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 from datetime import datetime, timezone, timedelta
 from src.pod_scra_intel_r2 import get_s3_client 
 from src.pod_scra_intel_control import get_tactical_panel 
-from src.pod_scra_intel_camouflage import get_camouflage_headers 
+from src.pod_scra_intel_camouflage import get_tactical_camouflage # 👈 更新動態HEADER名稱呼叫
 
 def execute_fortress_stages(sb, config, s_log_func):
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -94,11 +94,14 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, is_duty_
         tmp_path = f"/tmp/dl_{m['id'][:8]}{ext}"
         
         try:
-            # 🚀 核心擬態：向迷彩庫申請動態偽裝
-            dynamic_headers = get_camouflage_headers(worker_id, is_duty_officer)
+
+            # 🚀 核心擬態：向迷彩庫申請【成套】動態偽裝
+            camo_gear = get_tactical_camouflage(worker_id, is_duty_officer)
+            dynamic_headers = camo_gear["headers"]
+            tls_fingerprint = camo_gear["impersonate"]
             
-            # 🚀 戰術升級：使用 Session 保持與 Safari 15_3 底層指紋擬態
-            with requests.Session(impersonate="safari15_3") as session:
+            # 🚀 戰術升級：使用動態配對的 TLS 指紋啟動 Session，達成表裡一致
+            with requests.Session(impersonate=tls_fingerprint) as session:
                 # 💡 拆除 __enter__ 炸彈：不使用 with，改為直接賦值
                 r = session.get(f_url, stream=True, timeout=180, headers=dynamic_headers)
                 try:
