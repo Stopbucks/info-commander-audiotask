@@ -28,7 +28,7 @@ def get_tactical_panel(worker_id):
         "CAN_COMPRESS": True,         # ⚙️ 啟用 FFmpeg 降噪壓縮
         "COMPRESS_ONLY": True,        # 🛑 關鍵：設為兵工廠模式，壓完就跑，不耗費 API！
         "SCOUT_MODE": False,
-        "MAX_TICKS": 2 
+        "MAX_TICKS": 4, 
         "IDLE_GEARBOX": 2.0,
         "GLOBAL_DOMAIN_BLACKLIST": base_blacklist 
     }
