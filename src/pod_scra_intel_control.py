@@ -16,19 +16,23 @@ from supabase import create_client
 def get_tactical_panel(worker_id):
     """專屬特遣隊裝備發放，接替 DBOS 執行極限重裝壓縮"""
     
-    # 🚜 重裝吞噬者模板 (化身純壓縮農場)
+    # 🚜 重裝吞噬者模板 (化身純壓縮農場)_#先行換裝加入總下載與網域並發下載_@0510
     audio_eat_panel = {
         "MEM_TIER": 1024,             # 🚀 升級巨獸記憶體，吃下 DBOS 遺留的死檔
         "RADAR_FETCH_LIMIT": 100,
-        "STT_LIMIT": 10,               # 🎤 每次極限吞噬 10 個大怪獸進行壓縮
+        "DOWNLOAD_LIMIT": 4,           # 📥 總下載配額 (重裝兵胃口較大)
+        "MAX_SAME_DOMAIN": 2,          # 🛡️ 同網域安全併發數
+        "STT_LIMIT": 5,               # 🎤 每次極限吞噬 10 個大怪獸進行壓縮
         "SUMMARY_LIMIT": 0,           # 🛑 拔除摘要武器，專心做壓縮搬運工
         "SAFE_DURATION_SECONDS": 4200,# 🛡️ 70 分鐘安全撤退線 (確保在 GHA 90分死線前優雅結案)
         "CAN_COMPRESS": True,         # ⚙️ 啟用 FFmpeg 降噪壓縮
         "COMPRESS_ONLY": True,        # 🛑 關鍵：設為兵工廠模式，壓完就跑，不耗費 API！
         "SCOUT_MODE": False,
         "MAX_TICKS": 2 
+        "IDLE_GEARBOX": 2.0,
+        "GLOBAL_DOMAIN_BLACKLIST": base_blacklist 
     }
-
+     
     panels = {
         "AUDIO_EAT": audio_eat_panel
     }
