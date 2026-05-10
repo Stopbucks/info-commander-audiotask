@@ -136,4 +136,42 @@ def call_gemini_summary(secrets, r2_url_path, sys_prompt):
                 else: raise Exception(f"HTTP {ai_resp.status_code}: {ai_resp.text[:150]}")
             else:
                 import google.generativeai as genai
-                model = genai.Gene
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content([sys_prompt, uploaded_file])
+                result_text = response.text; break
+        except Exception as e:
+            last_error = str(e); print(f"⚠️ [Gemini 戰損] 模型 {model_name} 遭遇阻礙: {last_error}"); continue 
+
+    if payload_rest: del payload_rest; gc.collect()
+    if use_sdk and uploaded_file:
+        import google.generativeai as genai
+        try: genai.delete_file(uploaded_file.name); os.remove(tmp_path)
+        except: pass
+
+    if result_text: return result_text
+    else: raise Exception(f"所有 Gemini 梯隊均已陣亡。最後錯誤: {last_error}")
+
+def send_tg_report(secrets, source, title, summary, task_id, sb=None, worker_id="UNKNOWN", provider="AUTO"):
+    safe_summary = summary[:3800] + ("...\n(因字數限制截斷)" if len(summary) > 3800 else "")
+    f_source = str(source).replace("_", "＿").replace("*", "＊").replace("[", "〔").replace("]", "〕")
+    f_title = str(title).replace("_", "＿").replace("*", "＊").replace("[", "〔").replace("]", "〕")
+    
+    short_id = str(task_id)[:8]
+    report_msg = f"🎙️ *{f_source}*\n📌 *[{short_id}] {f_title}*\n🧠 *戰術核心*: {provider}\n\n{safe_summary}"
+    
+    url = f"https://api.telegram.org/bot{secrets['TG_TOKEN']}/sendMessage"
+    payload = {"chat_id": secrets["TG_CHAT"], "text": report_msg, "parse_mode": "Markdown"}
+
+    try:
+        resp = requests.post(url, json=payload, timeout=15)
+        if resp.status_code != 200:
+            payload["parse_mode"] = None
+            resp = requests.post(url, json=payload, timeout=15)
+        if resp.status_code == 200: return True
+        else: raise Exception(f"Telegram 終極發送失敗: {resp.text}")
+    except Exception as e: 
+        print(f"[{worker_id}] TG 發報失敗: {str(e)[:100]}")
+        if sb:
+            try: sb.table("pod_scra_log").insert({"worker_id": worker_id, "task_type": "TG_REPORT", "status": "ERROR", "message": f"TG 發報失敗 | ID: {short_id} | Err: {str(e)[:50]}"}).execute()
+            except: pass 
+        return False
