@@ -96,6 +96,8 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
     # 🚀 將抽取樣本數擴大至 50 筆，確保有足夠樣本進行網域篩選
     query = sb.table("mission_queue").select("*, mission_program_master(*)").in_("scrape_status", allowed_statuses).is_("r2_url", "null").lte("troop2_start_at", now_iso).order("created_at", desc=True)\
         .limit(50)  
+
+    
     tasks = query.execute().data or []
     if not tasks: return
     
@@ -104,6 +106,20 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
     
     time.sleep(random.uniform(2.0, 5.0))
     
+    # =========================================================
+    # 🚀 [V6.13] 網域分散度動態偵測 (Dynamic Dispersion)
+    # =========================================================
+    # 先行掃描這 50 筆任務中，總共有幾個「不重複的獨立網域」
+    available_domains = set([urlparse(t['audio_url']).netloc for t in tasks if t.get('audio_url')])
+    
+    # 💡 判斷公式：獨立網域數 >= 總下載目標，代表「極度分散」
+    if len(available_domains) >= dl_limit:
+        dynamic_max_domain = 1
+        s_log_func(sb, "DOWNLOAD", "INFO", f"🌐 貨源極度分散 (獨立網域: {len(available_domains)} 個 >= 目標 {dl_limit})。動態併發降為 1。")
+    else:
+        dynamic_max_domain = max_same_domain  # 使用面板傳來的設定 (通常是 2)
+        s_log_func(sb, "DOWNLOAD", "INFO", f"🌐 貨源相對集中 (獨立網域: {len(available_domains)} 個 < 目標 {dl_limit})。動態併發維持 {dynamic_max_domain}。")
+
     domain_counts = {} 
     downloaded_count = 0    
     
@@ -118,13 +134,16 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
         if any(b in target_domain for b in my_blacklist): 
             continue
         
-        # 🛡️ 同網域併發控制
+        # 🛡️ 同網域併發控制 (🚨 這裡修改為 dynamic_max_domain)
         current_domain_usage = domain_counts.get(target_domain, 0)
-        if current_domain_usage >= max_same_domain:
-            if current_domain_usage == max_same_domain:
-                s_log_func(sb, "DOWNLOAD", "INFO", f"🕵️ [{target_domain}] 已達併發上限 ({max_same_domain})，跳過此筆。")
+        if current_domain_usage >= dynamic_max_domain:
+            if current_domain_usage == dynamic_max_domain:
+                s_log_func(sb, "DOWNLOAD", "INFO", f"🕵️ [{target_domain}] 已達動態上限 ({dynamic_max_domain})，跳過。")
             continue
 
+
+        
+        
         if downloaded_count > 0:
             time.sleep(random.uniform(5.0, 12.0))
 
