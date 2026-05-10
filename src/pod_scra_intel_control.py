@@ -1,51 +1,50 @@
 # ---------------------------------------------------------
-# src/pod_scra_intel_control.py (V5.8 GHA 吞噬特遣隊_替補DBOS位置：專用版)
+# src/pod_scra_intel_control.py (V5.9 GHA 吞噬特遣隊_乾淨合併版)
 # [特遣] 代號：AUDIO_EAT
-# [面板] 專為 GitHub Actions 打造的重裝面板，享有最高產能與 FFmpeg 權限。
-# [節拍] MAX_TICKS: 2。以最短的 2 拍節奏，高頻交替執行轉譯與摘要，極致榨乾 GHA 效能。
-# [修正] 配合修正進行壓縮檔案
+# [修正] V5.9: 解決重複定義函數導致的 NameError。
+#        將 base_blacklist 移至全域變數，確保面板能正確讀取。
+#        設定為「純搬運清淤專家」，準備配合 V6.1 的斷開戰術執行極限下載。
 # ---------------------------------------------------------
 import os
 from supabase import create_client
 
-def get_tactical_panel(worker_id):
-    """依據機甲代號 (WORKER_ID)，動態發放戰鬥裝備與產能配額"""
-    
-    # 🚫 全局網域黑名單 
-    base_blacklist = [
-        "example-malicious.com", 
-        "broken-audio-server.net"
-    ]
-
+# =========================================================
+# 🛡️ 基地黑名單 (Base Blacklist) 定義區
+# 宣告為全域變數，確保所有面板都能讀取到
+# =========================================================
+base_blacklist = [
+    "example-malicious.com", 
+    "broken-audio-server.net",
+    "youtube.com", 
+    "youtu.be"
+]
 
 # =========================================================
-# ⚙️ GHA 專屬戰術控制面板 (AUDIO_EAT Exclusive)
+# ⚙️ 戰術控制面板 (Tactical Panel)
 # =========================================================
 def get_tactical_panel(worker_id):
     """專屬特遣隊裝備發放，接替 DBOS 執行極限重裝壓縮"""
     
-    # 🚜 重裝吞噬者模板 (化身純壓縮農場)_#先行換裝加入總下載與網域並發下載_@0510
+    # 🚜 重裝吞噬者模板 (化身極限物流搬運工)
     audio_eat_panel = {
-        "MEM_TIER": 1024,             # 🚀 升級巨獸記憶體，吃下 DBOS 遺留的死檔
+        "MEM_TIER": 1024,             # 🚀 維持巨獸記憶體
         "RADAR_FETCH_LIMIT": 100,
-        "DOWNLOAD_LIMIT": 4,           # 📥 總下載配額 (重裝兵胃口較大)
-        "MAX_SAME_DOMAIN": 2,          # 🛡️ 同網域安全併發數
-        "STT_LIMIT": 5,               # 🎤 每次極限吞噬 10 個大怪獸進行壓縮
-        "SUMMARY_LIMIT": 0,           # 🛑 拔除摘要武器，專心做壓縮搬運工
-        "SAFE_DURATION_SECONDS": 4200,# 🛡️ 70 分鐘安全撤退線 (確保在 GHA 90分死線前優雅結案)
+        "DOWNLOAD_LIMIT": 5,          # 📥 [提升] 每次最高可掃蕩 5 個檔案
+        "MAX_SAME_DOMAIN": 2,         # 🛡️ 同網域安全併發數
+        "STT_LIMIT": 5,               # 🎤 雖然斷開連結用不到，但保留設定
+        "SUMMARY_LIMIT": 0,           # 🛑 專心做搬運工
+        "SAFE_DURATION_SECONDS": 4200,
         "CAN_COMPRESS": True,         # ⚙️ 啟用 FFmpeg 降噪壓縮
-        "COMPRESS_ONLY": True,        # 🛑 關鍵：設為兵工廠模式，壓完就跑，不耗費 API！
+        "COMPRESS_ONLY": False,       # 
         "SCOUT_MODE": False,
-        "MAX_TICKS": 4, 
-        "IDLE_GEARBOX": 2.0,
+        "MAX_TICKS": 4,               # 留作日後若需回歸常規部隊時的節拍設定
+        "IDLE_GEARBOX": 1.0,          # ⚙️ GHA 啟動就是全力衝刺搬運，不降速
         "GLOBAL_DOMAIN_BLACKLIST": base_blacklist 
     }
      
     panels = {
         "AUDIO_EAT": audio_eat_panel
     }
-    
-
     
     # 就算萬一 WORKER_ID 沒抓到，在 GHA 環境下也直接套用重裝面板
     return panels.get(worker_id, audio_eat_panel)
