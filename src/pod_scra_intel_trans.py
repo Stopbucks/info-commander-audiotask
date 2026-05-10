@@ -93,9 +93,9 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
     HEAVY_ARMORS = ["HUGGINGFACE", "GITHUB"]
     allowed_statuses = ["success", "dl_heavy_only"] if worker_id in HEAVY_ARMORS else ["success"]
 
-    # 🚀 將抽取樣本數擴大至 30 筆，確保有足夠樣本進行網域篩選
+    # 🚀 將抽取樣本數擴大至 50 筆，確保有足夠樣本進行網域篩選
     query = sb.table("mission_queue").select("*, mission_program_master(*)").in_("scrape_status", allowed_statuses).is_("r2_url", "null").lte("troop2_start_at", now_iso).order("created_at", desc=True)\
-        .limit(30)  
+        .limit(50)  
     tasks = query.execute().data or []
     if not tasks: return
     
