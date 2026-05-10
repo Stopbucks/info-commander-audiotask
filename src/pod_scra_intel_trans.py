@@ -12,7 +12,7 @@
 # [V5.9 裝甲] 打卡機制前移：在執行重型任務前，先將 current_tick 寫入 DB，防止 OOM 導致無限輪迴。
 # [V5.9.1 裝甲] 導入下載軟失敗 (dl_soft_failure_count) 與 AppleCoreMedia 擬真探測協定。
 # [V5.9.2 編裝] 將 GITHUB 晉升為重裝兵，與 HUGGINGFACE 共同承接 dl_heavy_only 任務。
-# [V6] 全面移除切片休息
+# [V6] 全面移除切片休息 WORKER_ID = AUDIO_EAT
 # ---------------------------------------------------------
 
 import os, time, random, gc, json
@@ -68,7 +68,7 @@ def execute_fortress_stages(sb, config, s_log_func):
     # 🛡️ 接下來再開始執行高風險的耗時任務
     # 只要是「第 1 拍」，全軍皆可出門！但依據身分給予不同載重量。
     if current_tick == 1:
-        dl_limit = 2 if is_duty_officer else 1  # 主將拿 2 個，後勤兵低調只拿 1 個
+        dl_limit = 4 if is_duty_officer else 2  # 主將拿 4 個，後勤兵低調只拿 2 個
         s_log_func(sb, "STATE_M", "INFO", f"{role_name} 執行階段 1/{max_ticks}: 外部走私下載 (上限 {dl_limit} 筆)")
         
         rule_res = sb.table("pod_scra_rules").select("domain").in_("worker_id", [worker_id, "ALL"]).gte("expired_at", now_iso).execute()
@@ -89,7 +89,7 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
     worker_id = config.get('WORKER_ID', 'UNKNOWN')
     
     # 🚀 [V5.9.2 編裝升級] 將 GITHUB 納入重裝部隊
-    HEAVY_ARMORS = ["HUGGINGFACE", "GITHUB"]
+    HEAVY_ARMORS = ["HUGGINGFACE", "AUDIO_EAT"]
     allowed_statuses = ["success", "dl_heavy_only"] if worker_id in HEAVY_ARMORS else ["success"]
 
     # 🛡️ 雷達分流：輕裝兵只看 success，重裝部隊兼看 dl_heavy_only
