@@ -210,6 +210,8 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
             downloaded_count += 1 
             domain_counts[target_domain] = domain_counts.get(target_domain, 0) + 1
 
+
+        
         except requests.exceptions.HTTPError as he:
             status_code = getattr(he.response, 'status_code', 0)
             if status_code in [403, 401, 429]:
@@ -227,10 +229,13 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
                 
         except Exception as e: 
             err_str = str(e).lower()
-            if 'timeout' in err_str or 'timed out' in err_str:
+            # 🚀 [V6.13 修補] 將連線中斷 (connection closed/reset) 也納入泥沼戰術！
+            is_tarpit = any(kw in err_str for kw in ['timeout', 'timed out', 'connection closed', 'connection reset'])
+            
+            if is_tarpit:
                 if current_dl_fails < 1:
-                    # 🚀 [V6.12] 泥沼戰術 (Tarpit) 警報與 S_LOG 寫入
-                    warning_msg = f"⚠️ [{worker_id}] 遭遇泥沼戰術 (抓取超時>120s)，強制斬斷。嫌疑犯: {prog_info}"
+                    # 🚀 泥沼戰術 (Tarpit) 警報與 S_LOG 寫入
+                    warning_msg = f"⚠️ [{worker_id}] 遭遇泥沼戰術 (超時或斷線)，強制斬斷。嫌疑犯: {prog_info}"
                     s_log_func(sb, "DOWNLOAD", "WARNING", warning_msg)
                     sb.table("mission_queue").update({"dl_soft_failure_count": current_dl_fails + 1}).eq("id", m['id']).execute()
                     try:
@@ -240,7 +245,7 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
                         }).execute()
                     except: pass
                 else:
-                    s_log_func(sb, "DOWNLOAD", "WARNING", f"⚠️ [{worker_id}] 抓取再次超時，標記為 dl_heavy_only 移交重裝。死硬派: {prog_info}")
+                    s_log_func(sb, "DOWNLOAD", "WARNING", f"⚠️ [{worker_id}] 抓取再次超時或斷線，標記為 dl_heavy_only 移交重裝。死硬派: {prog_info}")
                     sb.table("mission_queue").update({"scrape_status": "dl_heavy_only"}).eq("id", m['id']).execute()
             else:
                 s_log_func(sb, "DOWNLOAD", "ERROR", f"❌ 搬運失敗: {str(e)}")
