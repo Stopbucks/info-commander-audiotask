@@ -8,6 +8,14 @@
 import os
 from supabase import create_client
 
+def get_tactical_panel(worker_id):
+    """依據機甲代號 (WORKER_ID)，動態發放戰鬥裝備與產能配額"""
+    
+    # 🚫 全局網域黑名單 
+    base_blacklist = [
+        "example-malicious.com", 
+        "broken-audio-server.net"
+    ]
 
 
 # =========================================================
