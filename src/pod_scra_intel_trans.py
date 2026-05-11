@@ -1,5 +1,5 @@
 # ---------------------------------------------------------
-# 程式碼：src/pod_scra_intel_trans.py  (V6.13 網域感知與微觀擬真版)
+# 程式碼：src/pod_scra_intel_trans.py  (V6.14 離線下載擬真版)
 # [節拍] 狀態機邏輯：透過 MAX_TICKS 控制循環。若主將設為 3 拍，則依序執行 [1:下載, 2:摘要, 3:轉譯]。
 # [節拍] 判斷公式：利用除以 2 的餘數 (current_tick % 2 != 0) 來動態交替分配任務型態。
 # [節拍] 任務分配：單數拍 (1, 3, 5...) 執行轉譯 (STT)；雙數拍 (2, 4, 6...) 執行摘要 (Summary)。
@@ -9,7 +9,6 @@
 # [後勤範例] 若身分為「後勤兵」：完全不管 MAX 是多少，【永遠不出門抓檔】，只專心交替做轉譯與摘要。
 # [隱蔽] 導入 camouflage 千面人模組，透過機甲基因種子達成每日一致性偽裝。
 
-# [V5.9 裝甲] 打卡機制前移：在執行重型任務前，先將 current_tick 寫入 DB，防止 OOM 導致無限輪迴。
 # [V5.9.1 裝甲] 導入下載軟失敗 (dl_soft_failure_count) 與 AppleCoreMedia 擬真探測協定。
 # [V5.9.2 編裝] 將 GITHUB 晉升為重裝兵，與 HUGGINGFACE 共同承接 dl_heavy_only 任務。
 # [V6] 全面移除切片休息 WORKER_ID = AUDIO_EAT
@@ -17,6 +16,9 @@
 # [V6.12 升級] 實裝 AppleCoreMedia 的動態 Session UUID 與 Range 偽裝，
 #              並加入局中即時黑名單與泥沼戰術 (Tarpit) 預警系統。
 # [V6.13 修改] 動態調整同網域下載數量
+# [V6.14 升級] 戰術校準：拔除不合邏輯的 Range: bytes=0- 串流偽裝。
+#              全面轉向「App 離線下載」行為擬真，消除與高速下載行為的邏輯矛盾，
+#              大幅降低遭伺服器以 Curl (56) 切斷連線的機率。
 # ---------------------------------------------------------
 
 import os, time, random, gc, json
@@ -31,9 +33,7 @@ def execute_fortress_stages(sb, config, s_log_func):
     now_iso = datetime.now(timezone.utc).isoformat()
     worker_id = config.get("WORKER_ID", "UNKNOWN_NODE")
     
-    # 🚀 取得面板裝備
     panel = get_tactical_panel(worker_id)
-    
     time.sleep(random.uniform(3.0, 8.0))
     t_res = sb.table("pod_scra_tactics").select("*").eq("id", 1).single().execute()
     if not t_res.data: return
@@ -66,9 +66,12 @@ def execute_fortress_stages(sb, config, s_log_func):
     from src.pod_scra_intel_core import run_audio_to_stt_mission, run_stt_to_summary_mission
 
     if current_tick == 1:
-        # 🚀 [V6.11] 從面板讀取下載配額，若非值勤官則強制降為 1 筆低調進貨
         base_dl_limit = panel.get("DOWNLOAD_LIMIT", 2)
-        dl_limit = base_dl_limit if is_duty_officer else 1 
+        if is_duty_officer or worker_id == "AUDIO_EAT":
+            dl_limit = base_dl_limit
+        else:
+            dl_limit = 1 
+            
         max_same_domain = panel.get("MAX_SAME_DOMAIN", 1)
         
         s_log_func(sb, "STATE_M", "INFO", f"{role_name} 執行階段 1/{max_ticks}: 外部下載 (總量 {dl_limit}, 同網域上限 {max_same_domain})")
@@ -90,14 +93,11 @@ def execute_fortress_stages(sb, config, s_log_func):
 
 def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit=2, max_same_domain=1, is_duty_officer=True):
     worker_id = config.get('WORKER_ID', 'UNKNOWN')
-    
     HEAVY_ARMORS = ["HUGGINGFACE", "GITHUB"]
     allowed_statuses = ["success", "dl_heavy_only"] if worker_id in HEAVY_ARMORS else ["success"]
 
-    # 🚀 將抽取樣本數擴大至 50 筆，確保有足夠樣本進行網域篩選
     query = sb.table("mission_queue").select("*, mission_program_master(*)").in_("scrape_status", allowed_statuses).is_("r2_url", "null").lte("troop2_start_at", now_iso).order("created_at", desc=True)\
         .limit(50)  
-
     
     tasks = query.execute().data or []
     if not tasks: return
@@ -107,18 +107,13 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
     
     time.sleep(random.uniform(2.0, 5.0))
     
-    # =========================================================
-    # 🚀 [V6.13] 網域分散度動態偵測 (Dynamic Dispersion)
-    # =========================================================
-    # 先行掃描這 50 筆任務中，總共有幾個「不重複的獨立網域」
     available_domains = set([urlparse(t['audio_url']).netloc for t in tasks if t.get('audio_url')])
     
-    # 💡 判斷公式：獨立網域數 >= 總下載目標，代表「極度分散」
     if len(available_domains) >= dl_limit:
         dynamic_max_domain = 1
         s_log_func(sb, "DOWNLOAD", "INFO", f"🌐 貨源極度分散 (獨立網域: {len(available_domains)} 個 >= 目標 {dl_limit})。動態併發降為 1。")
     else:
-        dynamic_max_domain = max_same_domain  # 使用面板傳來的設定 (通常是 2)
+        dynamic_max_domain = max_same_domain 
         s_log_func(sb, "DOWNLOAD", "INFO", f"🌐 貨源相對集中 (獨立網域: {len(available_domains)} 個 < 目標 {dl_limit})。動態併發維持 {dynamic_max_domain}。")
 
     domain_counts = {} 
@@ -131,20 +126,15 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
         if not f_url: continue
         target_domain = urlparse(f_url).netloc
         
-        # 🛡️ 局中即時黑名單過濾
         if any(b in target_domain for b in my_blacklist): 
             continue
         
-        # 🛡️ 同網域併發控制 (🚨 這裡修改為 dynamic_max_domain)
         current_domain_usage = domain_counts.get(target_domain, 0)
         if current_domain_usage >= dynamic_max_domain:
             if current_domain_usage == dynamic_max_domain:
                 s_log_func(sb, "DOWNLOAD", "INFO", f"🕵️ [{target_domain}] 已達動態上限 ({dynamic_max_domain})，跳過。")
             continue
 
-
-        
-        
         if downloaded_count > 0:
             time.sleep(random.uniform(5.0, 12.0))
 
@@ -159,26 +149,24 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
             dynamic_headers = camo_gear["headers"]
             tls_fingerprint = camo_gear["impersonate"]
             
-            # 🚀 [V6.12] 蘋果行為學擬真：動態掛載單次行動特徵
+            # 🚀 [V6.14 核心校準] 蘋果離線下載擬真：保留 Session ID，拔除不合邏輯的 Range 請求
             is_apple = "AppleCoreMedia" in dynamic_headers.get("User-Agent", "")
             if is_apple:
                 import uuid
-                # 每次迴圈產生全新的 UUID，代表使用者「又點擊了一次播放」
                 dynamic_headers["X-Playback-Session-Id"] = str(uuid.uuid4()).upper()
-                # 蘋果必帶的 Range 起始要求
-                dynamic_headers["Range"] = "bytes=0-"
+                # 🗑️ 已移除 dynamic_headers["Range"] = "bytes=0-"，全面擁抱「離線下載」行為模型
             
             with requests.Session(impersonate=tls_fingerprint) as session:
                 
-                # 🍎 探測階段維持原樣 (針對 current_dl_fails == 1)
+                # 🍎 探測階段 (僅針對稍微難搞的目標)
                 if current_dl_fails == 1:
-                    s_log_func(sb, "DOWNLOAD", "INFO", f"🍎 [{worker_id}] 對目標 [{target_domain}] 啟動媒體播放器擬真協定 (Range Probe)...")
+                    s_log_func(sb, "DOWNLOAD", "INFO", f"🍎 [{worker_id}] 對目標 [{target_domain}] 啟動連線預熱 (Probe)...")
                     probe_headers = dynamic_headers.copy()
                     if "X-Playback-Session-Id" not in probe_headers:
                         import uuid
                         probe_headers["X-Playback-Session-Id"] = str(uuid.uuid4()).upper()
-                    probe_headers["Icy-MetaData"] = "1"
-                    probe_headers["Range"] = "bytes=0-1" 
+                    # 探測時依然可以要求前幾個 bytes 作為預熱
+                    probe_headers["Range"] = "bytes=0-100" 
                     try:
                         probe_r = session.get(f_url, timeout=15, headers=probe_headers)
                         probe_r.close()
@@ -190,6 +178,7 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
                 dl_start_time = time.time()
                 realistic_chunk_size = random.choice([16384, 32768, 65536]) 
                 
+                # 🚀 執行真實下載 (離線模式)
                 r = session.get(f_url, stream=True, timeout=final_timeout, headers=dynamic_headers)
                 
                 try:
@@ -210,8 +199,6 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
             downloaded_count += 1 
             domain_counts[target_domain] = domain_counts.get(target_domain, 0) + 1
 
-
-        
         except requests.exceptions.HTTPError as he:
             status_code = getattr(he.response, 'status_code', 0)
             if status_code in [403, 401, 429]:
@@ -222,19 +209,16 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
                     {"worker_id": worker_id, "domain": target_domain, "rule_type": "AUTO_COOLDOWN", "expired_at": victim_freeze},
                     {"worker_id": "ALL", "domain": target_domain, "rule_type": "VIGILANCE", "expired_at": ally_freeze}
                 ]).execute()
-                # 🚀 局中防禦：立刻將該網域加入本次迴圈的黑名單，保護後續任務
                 my_blacklist.append(target_domain)
             else:
                 s_log_func(sb, "DOWNLOAD", "ERROR", f"❌ 搬運異常: {status_code}")
                 
         except Exception as e: 
             err_str = str(e).lower()
-            # 🚀 [V6.13 修補] 將連線中斷 (connection closed/reset) 也納入泥沼戰術！
             is_tarpit = any(kw in err_str for kw in ['timeout', 'timed out', 'connection closed', 'connection reset'])
             
             if is_tarpit:
                 if current_dl_fails < 1:
-                    # 🚀 泥沼戰術 (Tarpit) 警報與 S_LOG 寫入
                     warning_msg = f"⚠️ [{worker_id}] 遭遇泥沼戰術 (超時或斷線)，強制斬斷。嫌疑犯: {prog_info}"
                     s_log_func(sb, "DOWNLOAD", "WARNING", warning_msg)
                     sb.table("mission_queue").update({"dl_soft_failure_count": current_dl_fails + 1}).eq("id", m['id']).execute()
