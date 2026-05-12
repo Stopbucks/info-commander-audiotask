@@ -13,7 +13,8 @@ name: GHA STT Assault (V5.9.9 重裝吞噬特遣隊)
 on:
   schedule:
     # 🚀 戰術修正：每 4 小時的第 23 分鐘啟動 (如 00:23, 04:23, 08:23...)
-    - cron: '23 */4 * * *'
+        - cron: '23 */12 * * *'
+    #    - cron: '23 */4 * * *'
   workflow_dispatch: # 允許手動強制啟動
 
 jobs:
