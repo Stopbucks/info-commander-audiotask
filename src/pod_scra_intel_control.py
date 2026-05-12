@@ -29,8 +29,8 @@ def get_tactical_panel(worker_id):
     audio_eat_panel = {
         "MEM_TIER": 1024,             # 🚀 維持巨獸記憶體
         "RADAR_FETCH_LIMIT": 100,
-        "DOWNLOAD_LIMIT": 5,          # 📥 [提升] 每次最高可掃蕩 5 個檔案
-        "MAX_SAME_DOMAIN": 2,         # 🛡️ 同網域安全併發數
+        "DOWNLOAD_LIMIT": 3,          # 📥 [提升] 每次最高可掃蕩 5 個檔案
+        "MAX_SAME_DOMAIN": 1,         # 🛡️ 同網域安全併發數
         "STT_LIMIT": 5,               # 🎤 雖然斷開連結用不到，但保留設定
         "SUMMARY_LIMIT": 0,           # 🛑 專心做搬運工
         "SAFE_DURATION_SECONDS": 4200,
