@@ -1,5 +1,5 @@
 # ---------------------------------------------------------
-# 程式碼：src/pod_scra_intel_trans.py  (V6.14 離線下載擬真版)
+# 程式碼：src/pod_scra_intel_trans.py  (V6.15 取消T2時間限制_下載擬真版)
 # [節拍] 狀態機邏輯：透過 MAX_TICKS 控制循環。若主將設為 3 拍，則依序執行 [1:下載, 2:摘要, 3:轉譯]。
 # [節拍] 判斷公式：利用除以 2 的餘數 (current_tick % 2 != 0) 來動態交替分配任務型態。
 # [節拍] 任務分配：單數拍 (1, 3, 5...) 執行轉譯 (STT)；雙數拍 (2, 4, 6...) 執行摘要 (Summary)。
@@ -9,8 +9,7 @@
 # [後勤範例] 若身分為「後勤兵」：完全不管 MAX 是多少，【永遠不出門抓檔】，只專心交替做轉譯與摘要。
 # [隱蔽] 導入 camouflage 千面人模組，透過機甲基因種子達成每日一致性偽裝。
 
-# [V5.9.1 裝甲] 導入下載軟失敗 (dl_soft_failure_count) 與 AppleCoreMedia 擬真探測協定。
-# [V5.9.2 編裝] 將 GITHUB 晉升為重裝兵，與 HUGGINGFACE 共同承接 dl_heavy_only 任務。
+
 # [V6] 全面移除切片休息 WORKER_ID = AUDIO_EAT
 # [V6.11 升級] 實裝 DOWNLOAD_LIMIT 與 MAX_SAME_DOMAIN 網域感知限流機制。
 # [V6.12 升級] 實裝 AppleCoreMedia 的動態 Session UUID 與 Range 偽裝，
@@ -19,6 +18,7 @@
 # [V6.14 升級] 戰術校準：拔除不合邏輯的 Range: bytes=0- 串流偽裝。
 #              全面轉向「App 離線下載」行為擬真，消除與高速下載行為的邏輯矛盾，
 #              大幅降低遭伺服器以 Curl (56) 切斷連線的機率。
+#[V6.15] 取消T2時間限制，讓AUDIO_EAT可以直接下載
 # ---------------------------------------------------------
 
 import os, time, random, gc, json
@@ -90,14 +90,22 @@ def execute_fortress_stages(sb, config, s_log_func):
     else:
         s_log_func(sb, "STATE_M", "INFO", f"{role_name} 啟動摘要發報 (由面板接管)")
         run_stt_to_summary_mission(sb) 
-
+ 
 def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit=2, max_same_domain=1, is_duty_officer=True):
     worker_id = config.get('WORKER_ID', 'UNKNOWN')
-    HEAVY_ARMORS = ["HUGGINGFACE", "GITHUB"]
+    
+    # 🚀 [修改 1] 將 AUDIO_EAT 正式編入重裝部隊，可處理 dl_heavy_only 與 success 任務
+    HEAVY_ARMORS = ["HUGGINGFACE", "GITHUB", "AUDIO_EAT"]
     allowed_statuses = ["success", "dl_heavy_only"] if worker_id in HEAVY_ARMORS else ["success"]
 
-    query = sb.table("mission_queue").select("*, mission_program_master(*)").in_("scrape_status", allowed_statuses).is_("r2_url", "null").lte("troop2_start_at", now_iso).order("created_at", desc=True)\
-        .limit(50)  
+    # 基礎查詢：無 r2_url 且狀態符合
+    query = sb.table("mission_queue").select("*, mission_program_master(*)").in_("scrape_status", allowed_statuses).is_("r2_url", "null")
+    
+    # 🚀 [修改 2] 特權開關：AUDIO_EAT 徹底無視 troop2_start_at 時間鎖，其餘部隊仍受限制
+    if worker_id != "AUDIO_EAT":
+        query = query.lte("troop2_start_at", now_iso)
+        
+    query = query.order("created_at", desc=True).limit(50)  
     
     tasks = query.execute().data or []
     if not tasks: return
@@ -123,8 +131,15 @@ def run_logistics_engine(sb, config, now_iso, s_log_func, my_blacklist, dl_limit
         if downloaded_count >= dl_limit: break
             
         f_url = m.get('audio_url')
-        if not f_url: continue
+        
+        # 🚀 [修改 3] 防呆機制：若無實體網址，記錄警告並略過
+        if not f_url: 
+            s_log_func(sb, "DOWNLOAD", "WARNING", f"⚠️ 任務 {m['id'][:8]} 缺少 audio_url 實體網址，無法執行搬運，略過。")
+            continue
+            
         target_domain = urlparse(f_url).netloc
+        
+
         
         if any(b in target_domain for b in my_blacklist): 
             continue
